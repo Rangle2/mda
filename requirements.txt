@@ -1,0 +1,26 @@
+# Core
+numpy
+torch
+
+# CLI
+rich
+prompt_toolkit
+python-dotenv
+
+# LLM integrations
+requests
+anthropic
+ollama
+
+# Benchmark — RAG baseline
+chromadb
+sentence-transformers
+
+# Translation (optional)
+deep-translator
+langdetect
+
+# Utilities
+tqdm
+matplotlib
+ijson

@@ -1,0 +1,67 @@
+Server Side Public License
+VERSION 1, OCTOBER 16, 2018
+
+Copyright (C) 2026 Mert Polat <mert@kairfy.com>
+
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+
+                            PREAMBLE
+
+The Server Side Public License (this document, or "SSPL") is based on the
+GNU General Public License, version 3 ("GPL"). The goal of SSPL is to
+ensure that companies that use and benefit from open source software
+provide meaningful access to the source code of the tools they use to
+provide their services.
+
+If you modify the Program, or if you make it available over a network, you
+must provide the source code of the entire program stack being used,
+including the service source code.
+
+                TERMS AND CONDITIONS
+
+0. Definitions.
+
+"This License" refers to version 1 of the Server Side Public License.
+
+"The Program" refers to any copyrightable work licensed under this License.
+
+"You" refers to the licensee.
+
+"Service" means making the functionality of the Program, or a modified
+version thereof, available to third parties as a service.
+
+1. Personal and Internal Use
+
+You may use, copy, modify, and distribute this software for personal or
+internal business purposes, free of charge, under the following conditions:
+
+  a) You do not make the software available as a service to third parties.
+  b) You retain all copyright and license notices.
+
+2. Service Use
+
+If you use this software or a modified version of it to provide a service
+to third parties, you must make the complete corresponding source code of
+the entire program stack — including all modules, services, and tooling
+required to deploy and run the service — available under this License.
+
+3. No Sublicensing
+
+You may not sublicense the software under any other license. All copies
+and derivative works must carry this License.
+
+4. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+5. Contact
+
+For commercial licensing inquiries (cloud deployment, SaaS integration,
+or enterprise use), contact: mert@kairfy.com

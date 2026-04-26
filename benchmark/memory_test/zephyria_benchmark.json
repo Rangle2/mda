@@ -1,0 +1,200 @@
+[
+  {
+    "id": "ATOM1",
+    "group": "ATOMIC_RECALL",
+    "type": "fact",
+    "question": "What frequency in hertz do aether crystals emit?",
+    "expected_keywords": ["7.3", "hertz"],
+    "expected_answer": "Aether crystals emit a low-frequency resonance at 7.3 hertz.",
+    "measures": "Specific numeric value retrieval"
+  },
+  {
+    "id": "ATOM2",
+    "group": "ATOMIC_RECALL",
+    "type": "fact",
+    "question": "How many registered members does the Drift Miners Guild have?",
+    "expected_keywords": ["4,200", "guild"],
+    "expected_answer": "The Drift Miners Guild has 4,200 registered members.",
+    "measures": "Specific numeric value retrieval from a secondary entity"
+  },
+  {
+    "id": "ATOM3",
+    "group": "ATOMIC_RECALL",
+    "type": "fact",
+    "question": "What is the annual mortality rate of Drift Miners?",
+    "expected_keywords": ["23", "percent"],
+    "expected_answer": "Drift Miners have a mortality rate of 23 percent per year.",
+    "measures": "Numeric fact tied to a named group"
+  },
+  {
+    "id": "ATOM4",
+    "group": "ATOMIC_RECALL",
+    "type": "fact",
+    "question": "How much does a standard aether crystal weigh?",
+    "expected_keywords": ["14", "kilograms"],
+    "expected_answer": "A single crystal of standard size weighs 14 kilograms.",
+    "measures": "Standard unit value recall"
+  },
+  {
+    "id": "ATOM5",
+    "group": "ATOMIC_RECALL",
+    "type": "fact",
+    "question": "What is the name of the largest known aether crystal?",
+    "expected_keywords": ["Heartstone"],
+    "expected_answer": "The largest known aether crystal is called the Heartstone.",
+    "measures": "Named entity recall"
+  },
+  {
+    "id": "ATOM6",
+    "group": "ATOMIC_RECALL",
+    "type": "fact",
+    "question": "How many people died in the Sector Nine collapse?",
+    "expected_keywords": ["80,000"],
+    "expected_answer": "The Sector Nine collapse killed 80,000 people.",
+    "measures": "Fact tied to a historical event"
+  },
+  {
+    "id": "ASSOC1",
+    "group": "ASSOCIATION",
+    "type": "concept",
+    "question": "What is the Groundless Sea and why does it receive no sunlight?",
+    "expected_keywords": ["Groundless Sea", "shadow", "Zephyria", "continent"],
+    "expected_answer": "The Groundless Sea is the ocean below Zephyria. It receives no sunlight because the floating continent blocks it.",
+    "measures": "Two-entity association: Groundless Sea ↔ Zephyria"
+  },
+  {
+    "id": "ASSOC2",
+    "group": "ASSOCIATION",
+    "type": "concept",
+    "question": "Why is the Spire District unusual as a place to build towers?",
+    "expected_keywords": ["downward", "underside", "hang", "Spire"],
+    "expected_answer": "Towers in the Spire District are built downward from the continent's underside and hang freely in open air.",
+    "measures": "Property association: Spire District ↔ floating architecture"
+  },
+  {
+    "id": "ASSOC3",
+    "group": "ASSOCIATION",
+    "type": "concept",
+    "question": "What is the connection between the Shards currency and aether crystals?",
+    "expected_keywords": ["Shards", "non-functional", "lost", "resonance"],
+    "expected_answer": "Shards are minted from fragments of non-functional aether crystals that have lost their resonance.",
+    "measures": "Causal association between two named entities"
+  },
+  {
+    "id": "ASSOC4",
+    "group": "ASSOCIATION",
+    "type": "concept",
+    "question": "What qualifies as a Drift Warning from the RMA?",
+    "expected_keywords": ["6.8", "hertz", "drops", "zone"],
+    "expected_answer": "A Drift Warning is issued when aether resonance frequency drops below 6.8 hertz in any zone.",
+    "measures": "Threshold value tied to a named process"
+  },
+  {
+    "id": "HOP1",
+    "group": "MULTI_HOP",
+    "type": "multi-hop",
+    "question": "How did Solenne Var's personal history influence her first act as Magistra?",
+    "expected_keywords": ["Drift Miner", "father", "Sector Nine", "RMA", "budget"],
+    "expected_answer": "Var's father was a Drift Miner who died in Sector Nine. Her first act as Magistra was to triple the RMA's budget, reflecting her personal connection to the failures that caused the collapse.",
+    "measures": "Multi-hop: Var ↔ father ↔ Sector Nine ↔ RMA budget decision"
+  },
+  {
+    "id": "HOP2",
+    "group": "MULTI_HOP",
+    "type": "multi-hop",
+    "question": "Trace the connection from Davin Orell's career change to the RMA's current Drift Warning thresholds.",
+    "expected_keywords": ["Drift Miner", "Lira Vas", "interference", "fracture", "threshold"],
+    "expected_answer": "Orell was a Drift Miner who became a scientist. He studied under Lira Vas and extended her interference model to predict fracture timelines. That model is now the basis for RMA Drift Warning threshold calculations.",
+    "measures": "4-hop chain: Orell career → Vas model → fracture model → RMA thresholds"
+  },
+  {
+    "id": "HOP3",
+    "group": "MULTI_HOP",
+    "type": "multi-hop",
+    "question": "What physical property of the Sector Nine crystal cluster explains why interference occurred there?",
+    "expected_keywords": ["31 meters", "80 meters", "interference range", "two deposits"],
+    "expected_answer": "The two crystal deposits in Sector Nine were only 31 meters apart, well within the 80-meter interference range that causes resonance amplification.",
+    "measures": "Multi-hop: Sector Nine event ↔ interference rule ↔ 80m threshold ↔ 31m measurement"
+  },
+  {
+    "id": "HOP4",
+    "group": "MULTI_HOP",
+    "type": "multi-hop",
+    "question": "Why is Davin Orell uniquely qualified to lead the Zephyria Academy of Aether Sciences?",
+    "expected_keywords": ["Drift Miner", "Orell", "fracture", "RMA", "Academy"],
+    "expected_answer": "Orell has both practical experience as a Drift Miner and developed the fracture timeline model used by the RMA. This combines field knowledge and theoretical contribution directly relevant to the Academy's focus.",
+    "measures": "Multi-hop: Orell background ↔ research contribution ↔ RMA use ↔ Academy role"
+  },
+  {
+    "id": "REASON1",
+    "group": "REASONING",
+    "type": "reasoning",
+    "question": "Why would a Drift Miner drilling 60 meters from a crystal cluster be in violation of post-collapse rules?",
+    "expected_keywords": ["500 meters", "ban", "Council", "cluster"],
+    "expected_answer": "After Sector Nine, the Council of Arcs banned all drilling within 500 meters of known crystal clusters. 60 meters is well within that exclusion zone.",
+    "measures": "Rule application reasoning: fact ↔ rule ↔ scenario"
+  },
+  {
+    "id": "REASON2",
+    "group": "REASONING",
+    "type": "reasoning",
+    "question": "If two crystal deposits are 50 meters apart and interference begins, how long before a mandatory evacuation must be triggered?",
+    "expected_keywords": ["72 hours", "fracture", "Drift Warning", "three", "evacuation"],
+    "expected_answer": "Interference sustained over 72 hours can cause crystal fracture. Drift Warnings are issued when frequency drops below 6.8 hz, and three consecutive warnings trigger mandatory evacuation.",
+    "measures": "Chained rule reasoning: proximity → interference → fracture timeline → warning system → evacuation"
+  },
+  {
+    "id": "REASON3",
+    "group": "REASONING",
+    "type": "reasoning",
+    "question": "How does the Heartstone's weight and age compare to what would be expected from the crystal formation rules?",
+    "expected_keywords": ["400 years", "1,200 years", "9,400", "formation"],
+    "expected_answer": "Crystals form over 400 years. The Heartstone has been active for 1,200 years, meaning it formed at least 1,200 years ago — three formation cycles old. At 9,400 kg it is also far heavier than the 14 kg standard.",
+    "measures": "Quantitative reasoning: formation time × age ↔ standard weight comparison"
+  },
+  {
+    "id": "REASON4",
+    "group": "REASONING",
+    "type": "reasoning",
+    "question": "Why does the Drift Miner pay rate of 850 Shards suggest their labor is undervalued?",
+    "expected_keywords": ["850", "1,000", "85 percent", "lift value"],
+    "expected_answer": "The official lift value of a crystal is 1,000 Shards per unit. Miners are paid 850, which is 85 percent of value. Given the 23 percent annual mortality rate, the compensation relative to risk appears low.",
+    "measures": "Value comparison reasoning: pay rate ↔ official value ↔ mortality risk"
+  },
+  {
+    "id": "UPDATE1",
+    "group": "CONFLICT_UPDATE",
+    "type": "reasoning",
+    "question": "The RMA sensor count has been updated: it now operates 3,100 sensors, not 2,400. How many sensors were added?",
+    "expected_keywords": ["700", "3,100", "2,400"],
+    "expected_answer": "The RMA added 700 sensors, going from 2,400 to 3,100.",
+    "measures": "Conflict/update handling: can the system accept a correction and reason from the new value?"
+  },
+  {
+    "id": "UPDATE2",
+    "group": "CONFLICT_UPDATE",
+    "type": "reasoning",
+    "question": "If the interference threshold were changed from 80 meters to 120 meters, would Sector Nine still have been at risk?",
+    "expected_keywords": ["31 meters", "120 meters", "yes", "still"],
+    "expected_answer": "Yes. The Sector Nine deposits were 31 meters apart, which is within both the original 80-meter and the hypothetical 120-meter threshold.",
+    "measures": "Counterfactual reasoning using stored numeric facts"
+  },
+  {
+    "id": "BOUNDARY1",
+    "group": "BOUNDARY",
+    "type": "fact",
+    "question": "What is the population of the city of Thornwall in Zephyria?",
+    "expected_keywords": [],
+    "expected_answer": "Thornwall is not mentioned in the knowledge base. The system should say it does not know.",
+    "measures": "Boundary test: system should NOT hallucinate a city that was never defined"
+  },
+  {
+    "id": "BOUNDARY2",
+    "group": "BOUNDARY",
+    "type": "fact",
+    "question": "Who was the Magistra before Aldric Tomb?",
+    "expected_keywords": [],
+    "expected_answer": "The knowledge base does not mention who preceded Aldric Tomb. The system should say it does not know.",
+    "measures": "Boundary test: system should NOT fabricate historical information not in the source"
+  }
+]
