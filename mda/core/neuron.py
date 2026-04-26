@@ -1,7 +1,7 @@
 import math
 import time
 import numpy as np
-from core.bind import bind, normalize, DIM
+from mda.core.bind import bind, normalize, DIM
 
 
 class Neuron:

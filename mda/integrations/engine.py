@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from integrations.loader import Loader
+    from mda.integrations.loader import Loader
 import numpy as np
 import requests
 
 from mda import MDA
-from inference.reasoning import ReasoningEngine
-from core.bind import cosine, normalize
-from training.checkpoint import load as _load
+from mda.inference.reasoning import ReasoningEngine
+from mda.core.bind import cosine, normalize
+from mda.training.checkpoint import load as _load
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 
@@ -65,7 +65,7 @@ class MDAEngine:
     @property
     def loader(self) -> "Loader":
         if self._loader is None:
-            from integrations.loader import Loader
+            from mda.integrations.loader import Loader
             self._loader = Loader(self.mda)
         return self._loader
 
@@ -75,7 +75,7 @@ class MDAEngine:
 
     @property
     def _memory_base(self) -> Path:
-        base = Path(__file__).parent.parent / ".memory" / self.user_id
+        base = Path(__file__).parent.parent.parent / ".memory" / self.user_id
         base.mkdir(parents=True, exist_ok=True)
         return base
 
@@ -104,9 +104,9 @@ class MDAEngine:
             if e.category == "custom"
         }
         if custom_ids:
-            from core.registry import EntityRegistry
-            from inference.broca import BrocaModule
-            from training.checkpoint import save as _ckpt_save
+            from mda.core.registry import EntityRegistry
+            from mda.inference.broca import BrocaModule
+            from mda.training.checkpoint import save as _ckpt_save
             tmp_reg   = EntityRegistry()
             tmp_broca = BrocaModule(self.mda.encoder, tmp_reg)
             for eid in custom_ids:
@@ -287,7 +287,7 @@ class MDAEngine:
         return count
 
     def load_md(self, path: str | None = None) -> int:
-        base = Path(__file__).parent.parent
+        base = Path(__file__).parent.parent.parent
         if path:
             p = Path(path.strip().strip("'\""))
             return self._load_md_file(p)

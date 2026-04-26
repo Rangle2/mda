@@ -2,8 +2,8 @@ import numpy as np
 import time
 from dataclasses import dataclass, field
 from typing import Optional
-from core.bind import DIM, random_vector, zero_vector, normalize, bind, bind_many, cosine
-from core.neuron import Neuron, Synapse
+from mda.core.bind import DIM, random_vector, zero_vector, normalize, bind, bind_many, cosine
+from mda.core.neuron import Neuron, Synapse
 
 MAX_SENSES = 8
 

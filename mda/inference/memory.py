@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from collections import deque
 
 import numpy as np
-from core.bind import cosine, normalize
+from mda.core.bind import cosine, normalize
 
 
 MAX_TURNS    = 20

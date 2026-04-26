@@ -7,10 +7,10 @@ import uuid
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from core.registry import EntityRegistry
-from inference.broca import BrocaModule
-from core.neuron import Synapse
-from core.bind import normalize
+from mda.core.registry import EntityRegistry
+from mda.inference.broca import BrocaModule
+from mda.core.neuron import Synapse
+from mda.core.bind import normalize
 
 
 def save(registry: EntityRegistry, broca: BrocaModule, path: str,

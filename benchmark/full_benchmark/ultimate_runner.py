@@ -40,7 +40,7 @@ dotenv.load_dotenv()
 MDA_LIB = Path(__file__).parent.parent.parent  # benchmark/full_benchmark -> benchmark -> mda-lib root
 sys.path.insert(0, str(MDA_LIB))
 
-from integrations.engine import MDAEngine, AnthropicEngine
+from mda.integrations.engine import MDAEngine, AnthropicEngine
 
 try:
     from rich.console import Console

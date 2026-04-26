@@ -5,14 +5,14 @@ Token-free, entity-centric, online learning system.
 
 import numpy as np
 from pathlib import Path
-from core.encoder import HolisticEncoder
-from core.registry import EntityRegistry
-from training.checkpoint import save as _save, load as _load
-from inference.broca import BrocaModule
-from inference.memory import ConversationMemory
-from inference.translator import MDATranslator
-from inference.associative import AssociativeChain
-from core.bind import normalize
+from mda.core.encoder import HolisticEncoder
+from mda.core.registry import EntityRegistry
+from mda.training.checkpoint import save as _save, load as _load
+from mda.inference.broca import BrocaModule
+from mda.inference.memory import ConversationMemory
+from mda.inference.translator import MDATranslator
+from mda.inference.associative import AssociativeChain
+from mda.core.bind import normalize
 
 
 def _load_stopwords(filename: str) -> frozenset:
@@ -95,7 +95,7 @@ class MDA:
         print(f"  Loaded {total:,} entities total        ")
 
     def teach(self, surface: str, facts: list[str], category: str = "unknown") -> "MDA":
-        from core.bind import bind_many
+        from mda.core.bind import bind_many
         entity = self.registry.get_or_create(surface, category)
         for fact in facts:
             av = self.encoder.encode(fact)
@@ -117,7 +117,7 @@ class MDA:
         if e1 and e2:
             e1.update_relation(e2.id, e2.v, 0.5)
             e2.update_relation(e1.id, e1.v, 0.5)
-            from core.bind import bind
+            from mda.core.bind import bind
             e1.add_synapse(e2, bind)
             e2.add_synapse(e1, bind)
         return self
@@ -126,7 +126,7 @@ class MDA:
         return normalize(self.encoder.encode(text))
 
     def find_similar(self, text: str, top_k: int = 5) -> list[tuple[str, float]]:
-        from core.bind import cosine
+        from mda.core.bind import cosine
         vec    = normalize(self.encoder.encode(text))
         scores = [(e.surface, cosine(vec, e.v)) for e in self.registry.all()]
         scores.sort(key=lambda x: -x[1])
@@ -157,7 +157,7 @@ class MDA:
         return model
 
     def process(self, text: str) -> None:
-        from core.bind import bind_many
+        from mda.core.bind import bind_many
         words = text.strip().split()
         if not words:
             return
@@ -183,7 +183,7 @@ class MDA:
             self.registry.update_synapses_all(entities_found, av)
 
     def experience(self, text: str) -> None:
-        from core.bind import normalize, bind
+        from mda.core.bind import normalize, bind
 
         en_text = self._translator.to_english(text)
         words   = en_text.strip().split()
@@ -240,7 +240,7 @@ class MDA:
     def _find_entities_from_text(self, text: str) -> list:
         """Return entity list from text — handles punctuation, case, plural, bigram."""
         import re
-        from core.bind import cosine
+        from mda.core.bind import cosine
         found    = []
         seen_ids = set()
         tokens   = text.split()
@@ -376,7 +376,7 @@ class MDA:
     def learn(self, text: str, source: str = "user") -> "MDA":
         """Process text as explicit learning — updates W, adds senses."""
         import re
-        from core.bind import bind_many
+        from mda.core.bind import bind_many
         en_text   = self._translator.to_english(text)
         input_vec = normalize(self.encoder.encode(en_text))
         entities  = self._find_entities_from_text(en_text)
@@ -450,7 +450,7 @@ class MDA:
         is found.
         """
         import time
-        from core.bind import cosine
+        from mda.core.bind import cosine
 
         lines:     list[str] = []
         query_vec  = normalize(self.encoder.encode(query))

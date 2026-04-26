@@ -1,11 +1,11 @@
 """Tests for inference/associative.py — AssociativeChain."""
 import numpy as np
 import pytest
-from core.bind import DIM, random_vector, bind, normalize
-from core.entity import Entity
-from core.registry import EntityRegistry
-from core.encoder import HolisticEncoder
-from inference.associative import AssociativeChain, ChainNode, ChainResult
+from mda.core.bind import DIM, random_vector, bind, normalize
+from mda.core.entity import Entity
+from mda.core.registry import EntityRegistry
+from mda.core.encoder import HolisticEncoder
+from mda.inference.associative import AssociativeChain, ChainNode, ChainResult
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ def chain(registry, encoder):
 @pytest.fixture
 def two_connected_entities(registry):
     """Two entities with a mutual synapse."""
-    from core.bind import bind
+    from mda.core.bind import bind
     a = registry.get_or_create("NodeA", "concept")
     b = registry.get_or_create("NodeB", "concept")
     a.add_synapse(b, bind)

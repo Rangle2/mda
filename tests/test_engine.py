@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from integrations.engine import MDAEngine, AnthropicEngine, _strip_markdown
+from mda.integrations.engine import MDAEngine, AnthropicEngine, _strip_markdown
 
 
 # ---------------------------------------------------------------------------

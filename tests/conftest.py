@@ -5,17 +5,17 @@ All tests import from the repo root, so sys.path is patched here.
 import sys
 import os
 
-# Ensure the repo root is on the path so "from core.xxx import ..." works
+# Ensure the repo root is on the path so "from mda.xxx import ..." works
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
 import pytest
 
-from core.bind import DIM, random_vector
-from core.encoder import HolisticEncoder
-from core.registry import EntityRegistry
-from core.entity import Entity
-from inference.broca import BrocaModule
+from mda.core.bind import DIM, random_vector
+from mda.core.encoder import HolisticEncoder
+from mda.core.registry import EntityRegistry
+from mda.core.entity import Entity
+from mda.inference.broca import BrocaModule
 
 
 @pytest.fixture

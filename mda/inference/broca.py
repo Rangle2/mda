@@ -1,6 +1,6 @@
 import numpy as np
-from core.bind import normalize, cosine
-from core.entity import Entity
+from mda.core.bind import normalize, cosine
+from mda.core.entity import Entity
 
 
 class BrocaModule:

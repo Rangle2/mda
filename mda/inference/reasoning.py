@@ -1,7 +1,7 @@
 import numpy as np
-from core.bind import bind, unbind, normalize, cosine, DIM
-from core.encoder import HolisticEncoder
-from core.registry import EntityRegistry
+from mda.core.bind import bind, unbind, normalize, cosine, DIM
+from mda.core.encoder import HolisticEncoder
+from mda.core.registry import EntityRegistry
 
 REFINEMENT_STEPS = 8
 CONVERGENCE_EPS  = 1e-4

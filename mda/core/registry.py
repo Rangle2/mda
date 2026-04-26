@@ -1,6 +1,6 @@
 import numpy as np
-from core.entity import Entity
-from core.bind import DIM, random_vector, cosine
+from mda.core.entity import Entity
+from mda.core.bind import DIM, random_vector, cosine
 
 _CATEGORY_SEEDS = {
     "person":   42, "animal":  43, "object":  44,
@@ -42,7 +42,7 @@ class EntityRegistry:
         if category in CATEGORY_VECTORS:
             rng   = np.random.default_rng(seed)
             noise = rng.normal(0, 0.05, DIM)
-            from core.bind import normalize
+            from mda.core.bind import normalize
             entity.v = normalize(CATEGORY_VECTORS[category] + noise)
         self._entities[eid]  = entity
         self._surface[key]   = eid

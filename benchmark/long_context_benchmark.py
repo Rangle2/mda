@@ -50,7 +50,7 @@ dotenv.load_dotenv()
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from integrations.engine import MDAEngine, AnthropicEngine
+from mda.integrations.engine import MDAEngine, AnthropicEngine
 
 try:
     from rich.console import Console

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mda-memory"
+version = "0.1.2"
+description = "Online associative memory for LLMs"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "torch",
+    "rich",
+    "prompt_toolkit",
+    "python-dotenv",
+    "requests",
+    "anthropic",
+    "ollama",
+    "chromadb",
+    "sentence-transformers",
+    "tqdm",
+    "matplotlib",
+    "ijson",
+    "deep-translator",
+    "langdetect",
+]
+
+[project.scripts]
+mda = "mda.integrations.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mda*"]
+
+[tool.setuptools.package-data]
+"mda.data" = ["*.txt"]

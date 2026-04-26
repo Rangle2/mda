@@ -1,8 +1,8 @@
 """Tests for core/encoder.py — HolisticEncoder."""
 import numpy as np
 import pytest
-from core.bind import DIM, normalize
-from core.encoder import HolisticEncoder
+from mda.core.bind import DIM, normalize
+from mda.core.encoder import HolisticEncoder
 
 
 @pytest.fixture

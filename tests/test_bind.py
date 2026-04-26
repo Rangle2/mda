@@ -1,7 +1,7 @@
 """Tests for core/bind.py — vector primitives."""
 import numpy as np
 import pytest
-from core.bind import (
+from mda.core.bind import (
     DIM, normalize, random_vector, zero_vector,
     bind, unbind, bind_many, cosine,
 )

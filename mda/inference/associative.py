@@ -13,9 +13,9 @@ Working principle:
 import re
 import numpy as np
 from dataclasses import dataclass, field
-from core.bind import normalize, cosine, bind
-from core.entity import Entity
-from core.registry import EntityRegistry
+from mda.core.bind import normalize, cosine, bind
+from mda.core.entity import Entity
+from mda.core.registry import EntityRegistry
 
 
 SEMANTIC_BOUNDARY = 0.25   # stop when this far from origin

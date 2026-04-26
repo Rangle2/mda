@@ -1,8 +1,8 @@
 """Tests for core/registry.py — EntityRegistry."""
 import numpy as np
 import pytest
-from core.bind import DIM, random_vector
-from core.registry import EntityRegistry, CATEGORY_VECTORS
+from mda.core.bind import DIM, random_vector
+from mda.core.registry import EntityRegistry, CATEGORY_VECTORS
 
 
 class TestGetOrCreate:
@@ -30,7 +30,7 @@ class TestGetOrCreate:
         e = registry.get_or_create("GPT", "software")
         assert not np.allclose(e.v, 0)
         # Should be close to the software category vector (noise std=0.05 on 256-dim)
-        from core.bind import cosine
+        from mda.core.bind import cosine
         sim = cosine(e.v, CATEGORY_VECTORS["software"])
         assert sim > 0.7
 

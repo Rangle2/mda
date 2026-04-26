@@ -1,7 +1,7 @@
 """Tests for mda.py — MDA top-level API."""
 import numpy as np
 import pytest
-from core.bind import DIM, normalize
+from mda.core.bind import DIM, normalize
 
 
 @pytest.fixture
@@ -166,7 +166,7 @@ class TestConfidence:
 
 class TestLearn:
     def test_returns_self(self, mda):
-        result = mda.learn("Neural networks learn from data.")
+        result = mda.learn("Neural networks learn from mda.data.")
         assert result is mda
 
     def test_creates_entities_from_text(self, mda):

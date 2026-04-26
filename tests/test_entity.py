@@ -2,8 +2,8 @@
 import time
 import numpy as np
 import pytest
-from core.bind import DIM, random_vector, normalize, cosine
-from core.entity import Entity, Sense
+from mda.core.bind import DIM, random_vector, normalize, cosine
+from mda.core.entity import Entity, Sense
 
 
 # ---------------------------------------------------------------------------
@@ -191,14 +191,14 @@ class TestSenses:
 
 class TestSynapses:
     def test_add_synapse_creates_entry(self):
-        from core.bind import bind
+        from mda.core.bind import bind
         e1 = make_entity("A", "e_0")
         e2 = make_entity("B", "e_1")
         e1.add_synapse(e2, bind)
         assert e2.id in e1.synapses
 
     def test_add_synapse_idempotent(self):
-        from core.bind import bind
+        from mda.core.bind import bind
         e1 = make_entity("A", "e_0")
         e2 = make_entity("B", "e_1")
         e1.add_synapse(e2, bind)

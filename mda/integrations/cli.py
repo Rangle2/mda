@@ -11,7 +11,7 @@ from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.text import Text
 
-from integrations.engine import MDAEngine, AnthropicEngine
+from mda.integrations.engine import MDAEngine, AnthropicEngine
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +387,7 @@ def run(model: str, lang: str, smart: bool, knowledge: str | None,
         print_sys(console, msg)
 
     # Auto-discover and load .md files — per-file progress
-    base = Path(__file__).parent.parent
+    base = Path(__file__).parent.parent.parent
     md_files = bridge._discover_md_files(base)
     if md_files:
         for f in md_files:
@@ -486,7 +486,7 @@ def _args() -> argparse.Namespace:
     return p.parse_args()
 
 
-if __name__ == "__main__":
+def main() -> None:
     a = _args()
     run(
         model=a.model, lang=a.lang, smart=a.smart,
@@ -494,3 +494,7 @@ if __name__ == "__main__":
         md=a.md, user_id=a.user_id,
         provider=a.provider, api_key=a.api_key,
     )
+
+
+if __name__ == "__main__":
+    main()

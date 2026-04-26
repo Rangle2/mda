@@ -2,8 +2,8 @@
 import time
 import numpy as np
 import pytest
-from core.bind import DIM, random_vector, normalize
-from inference.memory import ConversationMemory, Turn, MAX_TURNS, DECAY_RATE, MIN_SALIENCE
+from mda.core.bind import DIM, random_vector, normalize
+from mda.inference.memory import ConversationMemory, Turn, MAX_TURNS, DECAY_RATE, MIN_SALIENCE
 
 
 @pytest.fixture

@@ -2,8 +2,8 @@
 import time
 import numpy as np
 import pytest
-from core.bind import DIM, random_vector, normalize
-from core.neuron import Neuron, Synapse
+from mda.core.bind import DIM, random_vector, normalize
+from mda.core.neuron import Neuron, Synapse
 
 
 # ---------------------------------------------------------------------------

@@ -32,7 +32,7 @@ import ollama
 from rich.console import Console
 from rich.table import Table
 
-from integrations.engine import MDAEngine, AnthropicEngine
+from mda.integrations.engine import MDAEngine, AnthropicEngine
 
 
 

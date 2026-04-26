@@ -178,7 +178,7 @@ class MDATranslator:
                 word_to_ph[word] = ph
 
             masked = text
-            # Substitute longest tokens first — prevents a shorter word 
+            # Substitute longest tokens first — prevents a shorter word
             for word, ph in sorted(word_to_ph.items(), key=lambda x: -len(x[0])):
                 masked = re.sub(rf'\b{re.escape(word)}\b', ph, masked)
 

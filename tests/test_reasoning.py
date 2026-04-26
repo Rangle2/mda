@@ -1,10 +1,10 @@
 """Tests for inference/reasoning.py — ReasoningEngine."""
 import numpy as np
 import pytest
-from core.bind import DIM, random_vector, normalize
-from core.encoder import HolisticEncoder
-from core.registry import EntityRegistry
-from inference.reasoning import ReasoningEngine, ThoughtStep
+from mda.core.bind import DIM, random_vector, normalize
+from mda.core.encoder import HolisticEncoder
+from mda.core.registry import EntityRegistry
+from mda.inference.reasoning import ReasoningEngine, ThoughtStep
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ class TestDecompose:
         registry.get_or_create("Q", "concept")
         composed = engine.compose("P", "Q")
         recovered = engine.decompose(composed, "Q")
-        from core.bind import cosine
+        from mda.core.bind import cosine
         p_entity = registry.get("P")
         sim = cosine(normalize(recovered), normalize(p_entity.v))
         assert sim > 0.9
@@ -171,7 +171,7 @@ class TestInferFromChain:
         assert result == []
 
     def test_no_depth2_nodes_returns_empty(self, engine, registry, broca):
-        from inference.associative import ChainNode
+        from mda.inference.associative import ChainNode
         e = registry.get_or_create("Solo", "concept")
         node = ChainNode(entity=e, depth=1, activation=1.0, path=["Solo"])
         q = random_vector(DIM, seed=0)

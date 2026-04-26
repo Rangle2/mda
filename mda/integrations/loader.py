@@ -40,10 +40,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from core.bind import bind as _bind
+from mda.core.bind import bind as _bind
 
 if TYPE_CHECKING:
-    from mda import MDA
+    from mda.mda import MDA
 
 
 # ---------------------------------------------------------------------------

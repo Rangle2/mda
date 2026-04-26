@@ -1,9 +1,9 @@
 """Tests for inference/broca.py — BrocaModule."""
 import numpy as np
 import pytest
-from core.bind import DIM, normalize, random_vector
-from core.entity import Entity
-from inference.broca import BrocaModule
+from mda.core.bind import DIM, normalize, random_vector
+from mda.core.entity import Entity
+from mda.inference.broca import BrocaModule
 
 
 # ---------------------------------------------------------------------------

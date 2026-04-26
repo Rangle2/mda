@@ -1,5 +1,5 @@
 import numpy as np
-from core.bind import DIM, normalize
+from mda.core.bind import DIM, normalize
 
 CONCEPT_SEEDS = {
     "COMPILE":       100, "RUN":          101, "DEVELOP":      102,
@@ -653,7 +653,7 @@ class HolisticEncoder:
         Seed space starts at 100_000 to avoid collision with CONCEPT_SEEDS
         (which max out at 911).
         """
-        from core.bind import random_vector
+        from mda.core.bind import random_vector
         key = surface.upper().replace(" ", "_")
 
         if key in self._concepts:
@@ -684,5 +684,5 @@ class HolisticEncoder:
         return vec
 
     def similarity(self, a: str, b: str) -> float:
-        from core.bind import cosine
+        from mda.core.bind import cosine
         return cosine(self.encode(a), self.encode(b))
