@@ -47,6 +47,8 @@ def save(registry: EntityRegistry, broca: BrocaModule, path: str,
             "mda_version": "1.0",
             "created_at": created_at,
             "updated_at": datetime.utcnow().isoformat(),
+            "dim": (registry._entities[next(iter(registry._entities))].dim
+                    if registry._entities else 256),
         },
         "entities": {
             eid: {
@@ -87,7 +89,10 @@ def save(registry: EntityRegistry, broca: BrocaModule, path: str,
         arrays[f"{eid}_v"] = e.v.astype(np.float32)
         arrays[f"{eid}_h"] = e.h.astype(np.float32)
         if e.W is not None and e.id in top_w_ids:
-            arrays[f"{eid}_W"] = e.W.astype(np.float32)
+            w_arr = e.W
+            if hasattr(w_arr, 'cpu'):
+                w_arr = w_arr.cpu().numpy()
+            arrays[f"{eid}_W"] = w_arr.astype(np.float32)
             w_saved += 1
 
     Path(base).parent.mkdir(parents=True, exist_ok=True)
@@ -122,6 +127,15 @@ def load(registry: EntityRegistry, broca: BrocaModule,
 
     arrays = np.load(base + ".npz", allow_pickle=False)
 
+    # Validate dim to prevent silent shape mismatch
+    from mda.core.bind import DIM as CURRENT_DIM
+    saved_dim = meta.get("session", {}).get("dim", 256)
+    if saved_dim != CURRENT_DIM:
+        raise ValueError(
+            f"Checkpoint dim={saved_dim} but current system dim={CURRENT_DIM}. "
+            "Delete .memory/ and restart."
+        )
+
     # old_id (JSON) → new entity.id (assigned by registry counter)
     id_map: dict[str, str] = {}
 
@@ -136,10 +150,10 @@ def load(registry: EntityRegistry, broca: BrocaModule,
         h_key = f"{old_eid}_h"
         w_key = f"{old_eid}_W"
         if v_key in arrays:
-            entity.v = arrays[v_key].astype(np.float64)
+            entity.v = arrays[v_key].astype(np.float32)
         if h_key in arrays:
-            entity.h = arrays[h_key].astype(np.float64)
-        entity.W = arrays[w_key].astype(np.float64) if w_key in arrays else None
+            entity.h = arrays[h_key].astype(np.float32)
+        entity.W = arrays[w_key].astype(np.float32) if w_key in arrays else None
 
     # Restore synapses — remap target IDs too
     for old_eid, edata in meta["entities"].items():

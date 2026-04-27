@@ -28,6 +28,9 @@ class EntityRegistry:
     def __init__(self):
         self._entities: dict[str, Entity]  = {}
         self._surface:  dict[str, str]     = {}
+        self._em_matrix: np.ndarray | None = None   # (N, dim) float32, lazy built
+        self._em_index:  list[str]          = []     # entity ids in matrix row order
+        self._em_dirty:  bool               = True
 
     def get_or_create(self, surface: str, category: str = "unknown") -> Entity:
         key = surface.lower().strip()
@@ -40,12 +43,15 @@ class EntityRegistry:
         entity = Entity(id=eid, surface=surface)
         entity.category = category
         if category in CATEGORY_VECTORS:
-            rng   = np.random.default_rng(seed)
-            noise = rng.normal(0, 0.05, DIM)
+            rng = np.random.default_rng(seed)
+            # Scale noise std so cosine similarity stays consistent regardless of dim
+            noise_std = 0.05 * np.sqrt(256 / DIM)
+            noise = rng.normal(0, noise_std, DIM)
             from mda.core.bind import normalize
             entity.v = normalize(CATEGORY_VECTORS[category] + noise)
         self._entities[eid]  = entity
         self._surface[key]   = eid
+        self._em_dirty = True
         return entity
 
     def get(self, surface: str) -> Entity | None:
@@ -124,6 +130,36 @@ class EntityRegistry:
         self._surface.pop(key, None)
         for other in self._entities.values():
             other.synapses.pop(entity.id, None)
+        self._em_dirty = True
+
+    def _build_entity_matrix(self) -> None:
+        if not self._entities:
+            self._em_matrix = None
+            self._em_index  = []
+            self._em_dirty  = False
+            return
+        ids  = list(self._entities.keys())
+        vecs = np.stack([self._entities[eid].v.astype(np.float32) for eid in ids])
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        self._em_matrix = vecs / (norms + 1e-8)
+        self._em_index  = ids
+        self._em_dirty  = False
+
+    def nearest(self, query_vec: np.ndarray, top_k: int = 1
+                ) -> list[tuple[float, "Entity"]]:
+        """Return top_k entities by cosine similarity using EntityMatrix + batch_cosine."""
+        if self._em_dirty or self._em_matrix is None:
+            self._build_entity_matrix()
+        if self._em_matrix is None:
+            return []
+        from mda.core.accelerator import batch_cosine
+        q = query_vec.astype(np.float32)
+        qn = q / (np.linalg.norm(q) + 1e-8)
+        scores = batch_cosine(self._em_matrix, qn)
+        k = min(top_k, len(scores))
+        idx = np.argpartition(scores, -k)[-k:]
+        idx = idx[np.argsort(scores[idx])[::-1]]
+        return [(float(scores[i]), self._entities[self._em_index[i]]) for i in idx]
 
     def build_cross_entity_synapses(self, bind_fn, min_use_count: int = 2) -> int:
         """Build synapses between all entity pairs that share common fact keywords.

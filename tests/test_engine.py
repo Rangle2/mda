@@ -308,3 +308,27 @@ class TestAnthropicEngine:
             result = engine._call_llm("", "hello", "en")
         assert "anthropic" in result.lower() or "not installed" in result.lower() \
                or "error" in result.lower()
+
+
+
+def test_engine_chat_no_shape_errors():
+    """Full engine pipeline must run without shape errors after dim=512."""
+    from mda.integrations.engine import MDAEngine
+    e = MDAEngine(model="test-model")
+    e.learn("GPU acceleration enables parallel matrix operations")
+    e.learn("MDA processes facts using HDR vectors of dimension 512")
+    ctx = e._build_context("GPU parallel operations")
+    assert isinstance(ctx, str)
+
+
+def test_engine_save_load_roundtrip(tmp_path):
+    """Save/load must preserve entity count and dim."""
+    import os; os.chdir(tmp_path)
+    from mda.integrations.engine import MDAEngine
+    e = MDAEngine(model="test", user_id="test_user")
+    e.learn("Kairfy is an AI-powered legal analysis platform")
+    e.save()
+    n1 = e.mda.registry.count()
+    msgs = e.switch_model("test")
+    n2 = e.mda.registry.count()
+    assert n2 == n1

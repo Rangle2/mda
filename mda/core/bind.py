@@ -1,9 +1,25 @@
 import numpy as np
 
-DIM = 256
+DIM = 512
+
+# GPU delegation — safe regardless of torch availability.
+try:
+    from mda.core.accelerator import (
+        normalize_t as _normalize_t,
+        cosine_t    as _cosine_t,
+        fft_bind_t  as _fft_bind_t,
+        HAS_TORCH,
+    )
+except ImportError:
+    HAS_TORCH    = False
+    _normalize_t = None
+    _cosine_t    = None
+    _fft_bind_t  = None
 
 
 def normalize(v: np.ndarray) -> np.ndarray:
+    if HAS_TORCH and _normalize_t is not None:
+        return _normalize_t(v)
     n = np.linalg.norm(v)
     return v / (n + 1e-8)
 
@@ -18,6 +34,8 @@ def zero_vector(dim: int = DIM) -> np.ndarray:
 
 
 def bind(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    if HAS_TORCH and _fft_bind_t is not None:
+        return _fft_bind_t(a, b)
     return np.real(np.fft.ifft(np.fft.fft(a) * np.fft.fft(b)))
 
 
@@ -36,4 +54,6 @@ def bind_many(*vectors: np.ndarray) -> np.ndarray:
 
 
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
+    if HAS_TORCH and _cosine_t is not None:
+        return _cosine_t(a, b)
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))

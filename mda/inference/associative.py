@@ -51,6 +51,40 @@ class AssociativeChain:
     def __init__(self, registry: EntityRegistry, encoder):
         self.registry = registry
         self.encoder  = encoder
+        self._thresh_cache: tuple | None = None
+        self._thresh_entity_count: int   = 0
+
+    def _get_thresholds(self) -> tuple[float, float, float]:
+        """
+        (dyn_boundary, dyn_syn_min, dyn_query_threshold).
+        Pure numpy. Rebuilt only when entity count changes.
+        """
+        current_count = self.registry.count()
+        if (self._thresh_cache is not None
+                and self._thresh_entity_count == current_count):
+            return self._thresh_cache
+
+        synapse_sims: list[float] = []
+        synapse_strs: list[float] = []
+        for e in self.registry.all():
+            for eid, syn in e.synapses.items():
+                nb = self.registry.get_by_id(eid)
+                if nb:
+                    synapse_sims.append(float(cosine(e.v, nb.v)))
+                    synapse_strs.append(syn.strength)
+
+        if synapse_sims:
+            dyn_boundary        = max(min(synapse_sims) * 0.8, -0.9)
+            dyn_syn_min         = min(synapse_strs) * 0.9
+            dyn_query_threshold = min(dyn_boundary, 0.0)
+        else:
+            dyn_boundary        = -0.5
+            dyn_syn_min         = 0.01
+            dyn_query_threshold = -0.5
+
+        self._thresh_cache        = (dyn_boundary, dyn_syn_min, dyn_query_threshold)
+        self._thresh_entity_count = current_count
+        return self._thresh_cache
 
     def expand(self, origin_entity: Entity,
                context_vec: np.ndarray = None,
@@ -75,26 +109,8 @@ class AssociativeChain:
         all_nodes  = []
         compound_v = origin_v.copy()
 
-        # Dynamic thresholds — adapt to actual entity space density
-        synapse_sims = []
-        synapse_strs = []
-        for e in self.registry.all():
-            for eid, syn in e.synapses.items():
-                nb = self.registry.get_by_id(eid)
-                if nb:
-                    synapse_sims.append(float(cosine(e.v, nb.v)))
-                    synapse_strs.append(syn.strength)
-
-        if synapse_sims:
-            dyn_boundary       = max(min(synapse_sims) * 0.8, -0.9)
-            dyn_syn_min        = min(synapse_strs) * 0.9
-            # Query relevance: at least as lenient as the semantic boundary
-            # (in sparse spaces vectors are near-orthogonal; 0.05 would block all)
-            dyn_query_threshold = min(dyn_boundary, 0.0)
-        else:
-            dyn_boundary        = -0.5
-            dyn_syn_min         = 0.01
-            dyn_query_threshold = -0.5
+        # Dynamic thresholds — cached, rebuilt only when entity count changes
+        dyn_boundary, dyn_syn_min, dyn_query_threshold = self._get_thresholds()
 
         while queue:
             depth, entity, activation, path, sense_v = queue.pop(0)
@@ -166,10 +182,9 @@ class AssociativeChain:
                 break
 
         if origin is None:
-            scored = [(cosine(query_vec, e.v), e) for e in self.registry.all()]
-            scored.sort(key=lambda x: -x[0])
-            if scored and scored[0][0] > 0.25:
-                origin = scored[0][1]
+            hits = self.registry.nearest(query_vec, top_k=1)
+            if hits and hits[0][0] > 0.25:
+                origin = hits[0][1]
             else:
                 return None
 

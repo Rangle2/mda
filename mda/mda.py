@@ -28,7 +28,7 @@ def _load_stopwords(filename: str) -> frozenset:
 
 
 class MDA:
-    def __init__(self, dim: int = 256):
+    def __init__(self, dim: int = 512):
         self.dim      = dim
         self.encoder  = HolisticEncoder(dim)
         self.registry = EntityRegistry()

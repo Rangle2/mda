@@ -136,34 +136,86 @@ class ReasoningEngine:
         broca,
         top_k: int = 3,
     ) -> list[str]:
+        # Collect all candidate paths across depths
+        candidate_paths: list[list[str]] = []
+        for max_depth in (1, 2, 3):
+            for node in [n for n in chain_nodes if n.depth == max_depth][:4]:
+                if node.path:
+                    candidate_paths.append(node.path)
+
+        if not candidate_paths:
+            return []
+
+        return self._infer_paths_parallel(candidate_paths, query_vec, broca, top_k)
+
+    def _infer_paths_serial(
+        self, paths: list, query_vec: np.ndarray, broca, top_k: int
+    ) -> list[str]:
+        """Original sequential logic, kept for testing equivalence."""
         inferred: list[str] = []
         seen: set[str] = set()
+        for path in paths:
+            facts_per_hop: list[str] = []
+            valid = True
+            for surface in path:
+                entity = self.registry.get(surface)
+                if entity is None:
+                    valid = False
+                    break
+                scored = broca._score_facts(entity, query_vec, top_k=2)
+                if not scored or scored[0][0] < CHAIN_THRESHOLD:
+                    valid = False
+                    break
+                facts_per_hop.append(scored[0][1])
+            if not valid or not facts_per_hop:
+                continue
+            combined = " — ".join(facts_per_hop)
+            if combined not in seen:
+                seen.add(combined)
+                inferred.append(combined)
+            if len(inferred) >= top_k:
+                break
+        return inferred
 
-        for max_depth in (1, 2, 3):
-            nodes_at_depth = [n for n in chain_nodes if n.depth == max_depth]
-            for node in nodes_at_depth[:4]:
-                path = node.path
-                if not path:
-                    continue
-                facts_per_hop = []
-                valid = True
-                for surface in path:
-                    entity = self.registry.get(surface)
-                    if entity is None:
-                        valid = False
-                        break
-                    scored = broca._score_facts(entity, query_vec, top_k=2)
-                    if not scored or scored[0][0] < CHAIN_THRESHOLD:
-                        valid = False
-                        break
-                    facts_per_hop.append(scored[0][1])
-                if not valid or not facts_per_hop:
-                    continue
-                combined = " — ".join(facts_per_hop)
-                if combined not in seen:
-                    seen.add(combined)
-                    inferred.append(combined)
-                if len(inferred) >= top_k:
-                    return inferred
+    def _infer_paths_parallel(
+        self, paths: list, query_vec: np.ndarray, broca, top_k: int
+    ) -> list[str]:
+        """
+        Deduplicated path scoring: each unique entity is scored exactly once.
+        No torch dependency — speedup comes from deduplication;
+        GPU speedup comes from broca._score_facts internally.
+        """
+        # 1. Score each unique entity once
+        unique_surfaces: set[str] = set()
+        for path in paths:
+            unique_surfaces.update(path)
 
+        entity_scores: dict[str, list[tuple[float, str]]] = {}
+        for surface in unique_surfaces:
+            entity = self.registry.get(surface)
+            if entity is not None:
+                entity_scores[surface] = broca._score_facts(
+                    entity, query_vec, top_k=2
+                )
+
+        # 2. Assemble paths from cached scores
+        inferred: list[str] = []
+        seen: set[str] = set()
+        for path in paths:
+            facts_per_hop: list[str] = []
+            valid = True
+            for surface in path:
+                scored = entity_scores.get(surface, [])
+                if not scored or scored[0][0] < CHAIN_THRESHOLD:
+                    valid = False
+                    break
+                facts_per_hop.append(scored[0][1])
+            if not valid or not facts_per_hop:
+                continue
+            combined = " — ".join(facts_per_hop)
+            if combined not in seen:
+                seen.add(combined)
+                inferred.append(combined)
+            if len(inferred) >= top_k:
+                break
         return inferred

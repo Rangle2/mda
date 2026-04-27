@@ -72,10 +72,15 @@ class Entity:
 
     def __post_init__(self):
         seed = _det_seed(self.surface)
+        # Re-init zero fields with correct dim (default_factory uses global DIM)
+        for attr in ("a", "r", "gamma_t", "mu"):
+            val = getattr(self, attr)
+            if np.allclose(val, 0) and len(val) != self.dim:
+                object.__setattr__(self, attr, zero_vector(self.dim))
         if np.allclose(self.v, 0):
-            self.v = random_vector(DIM, seed=seed)
-        if np.allclose(self.r, 0):
-            self.r = random_vector(DIM, seed=seed + 1)
+            self.v = random_vector(self.dim, seed=seed)
+        if np.allclose(self.h, 0):
+            self.h = zero_vector(self.dim)
         if not self.neurons:
             self.neurons = [
                 Neuron(dim=self.dim, seed=seed + i + 2)
@@ -83,8 +88,18 @@ class Entity:
             ]
 
     def _ensure_W(self) -> None:
-        if self.W is None:
-            self.W = np.zeros((self.dim, self.dim))
+        if self.W is not None:
+            return
+        try:
+            from mda.core.accelerator import HAS_TORCH, DEVICE
+            if HAS_TORCH:
+                import torch
+                self.W = torch.zeros(self.dim, self.dim,
+                                     dtype=torch.float32, device=DEVICE)
+                return
+        except ImportError:
+            pass
+        self.W = np.zeros((self.dim, self.dim), dtype=np.float32)
 
     def ensemble_activation(self, input_vec: np.ndarray) -> np.ndarray:
         self._ensure_W()
@@ -243,19 +258,36 @@ class Entity:
 
     def update_W(self, target: np.ndarray, role: str = "agent") -> float:
         self._ensure_W()
-        lw      = ROLE_WEIGHTS.get(role, 0.5)
-        lr      = ETA_FAST * min(1.0 + self.use_count * 0.05, 3.0)
-        l2      = 0.01
-        pred    = np.tanh(self.W @ self.v)
-        error   = pred - target
-        loss    = float(np.mean(error ** 2))
-        dtanh   = 1.0 - pred ** 2
-        grad    = np.outer(error * dtanh, self.v) + l2 * self.W
-        self.W -= lw * lr * grad
-        mx      = np.max(np.abs(self.W))
-        if mx > 10.0:
-            self.W /= mx
-        return loss
+        lw  = ROLE_WEIGHTS.get(role, 0.5)
+        lr  = ETA_FAST * min(1.0 + self.use_count * 0.05, 3.0)
+        l2  = 0.01
+
+        if isinstance(self.W, np.ndarray):
+            pred    = np.tanh(self.W @ self.v)
+            error   = pred - target
+            loss    = float(np.mean(error ** 2))
+            dtanh   = 1.0 - pred ** 2
+            grad    = np.outer(error * dtanh, self.v) + l2 * self.W
+            self.W -= lw * lr * grad
+            mx      = np.max(np.abs(self.W))
+            if mx > 10.0:
+                self.W /= mx
+            return loss
+        else:
+            import torch
+            from mda.core.accelerator import to_t, to_np
+            v_t      = to_t(self.v.astype(np.float32))
+            tgt_t    = to_t(target.astype(np.float32))
+            pred     = torch.tanh(self.W @ v_t)
+            error    = pred - tgt_t
+            loss     = float(torch.mean(error ** 2).item())
+            dtanh    = 1.0 - pred ** 2
+            grad     = torch.outer(error * dtanh, v_t) + l2 * self.W
+            self.W  -= lw * lr * grad
+            mx = float(torch.max(torch.abs(self.W)).item())
+            if mx > 10.0:
+                self.W /= mx
+            return loss
 
     def update_memory(self, S: np.ndarray) -> None:
         gamma   = min(GAMMA_BASE + self.use_count * 0.001, 0.999)
@@ -291,22 +323,44 @@ class Entity:
         if not negs:
             return
         self._ensure_W()
-        pred     = np.tanh(self.W @ self.v)
-        sim_pos  = float(np.dot(pred, pos))
-        sim_negs = np.array([float(np.dot(pred, n)) for n in negs])
-        T        = 0.1
-        exp_pos  = np.exp(sim_pos / T)
-        exp_negs = np.exp(sim_negs / T)
-        denom    = exp_pos + np.sum(exp_negs)
-        d_pred   = -(1 - exp_pos / denom) * pos / T
-        for i, n in enumerate(negs):
-            d_pred += (exp_negs[i] / denom) * n / T
-        dtanh    = 1.0 - pred ** 2
-        grad     = np.outer(d_pred * dtanh, self.v)
-        self.W  -= ETA_FAST * 0.3 * grad
-        mx       = np.max(np.abs(self.W))
-        if mx > 10.0:
-            self.W /= mx
+
+        if isinstance(self.W, np.ndarray):
+            pred     = np.tanh(self.W @ self.v)
+            sim_pos  = float(np.dot(pred, pos))
+            sim_negs = np.array([float(np.dot(pred, n)) for n in negs])
+            T        = 0.1
+            exp_pos  = np.exp(sim_pos / T)
+            exp_negs = np.exp(sim_negs / T)
+            denom    = exp_pos + np.sum(exp_negs)
+            d_pred   = -(1 - exp_pos / denom) * pos / T
+            for i, n in enumerate(negs):
+                d_pred += (exp_negs[i] / denom) * n / T
+            dtanh    = 1.0 - pred ** 2
+            grad     = np.outer(d_pred * dtanh, self.v)
+            self.W  -= ETA_FAST * 0.3 * grad
+            mx       = np.max(np.abs(self.W))
+            if mx > 10.0:
+                self.W /= mx
+        else:
+            import torch
+            from mda.core.accelerator import to_t
+            v_t      = to_t(self.v.astype(np.float32))
+            pos_t    = to_t(pos.astype(np.float32))
+            negs_t   = [to_t(n.astype(np.float32)) for n in negs]
+            pred     = torch.tanh(self.W @ v_t)
+            T        = 0.1
+            exp_pos  = torch.exp(torch.dot(pred, pos_t) / T)
+            exp_negs = torch.stack([torch.exp(torch.dot(pred, n) / T) for n in negs_t])
+            denom    = exp_pos + exp_negs.sum()
+            d_pred   = -(1 - exp_pos / denom) * pos_t / T
+            for i, n in enumerate(negs_t):
+                d_pred = d_pred + (exp_negs[i] / denom) * n / T
+            dtanh    = 1.0 - pred ** 2
+            grad     = torch.outer(d_pred * dtanh, v_t)
+            self.W  -= ETA_FAST * 0.3 * grad
+            mx       = float(torch.max(torch.abs(self.W)).item())
+            if mx > 10.0:
+                self.W /= mx
 
     def decay(self) -> None:
         import math

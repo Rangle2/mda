@@ -208,6 +208,8 @@ class MDATranslator:
             return text
 
     def save_cache(self, path: str) -> None:
+        from pathlib import Path
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self._cache, f, ensure_ascii=False, indent=2)
 

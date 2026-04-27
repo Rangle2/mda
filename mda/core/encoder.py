@@ -626,22 +626,42 @@ class HolisticEncoder:
                 h = 0
                 for ch in word:
                     h = (h * 31 + ord(ch)) & 0xFFFFFFFF
-                idx = 64 + (h % 64)
+                _bucket_start = self.dim // 8
+                _bucket_range = self.dim // 8
+                idx = _bucket_start + (h % _bucket_range)
                 if idx < self.dim:
                     v[idx] += 0.5 / max(len(words), 1)
 
-        v[192] = min(len(text_l) / 100.0, 1.0)
-        v[193] = min(len(words)  / 20.0,  1.0)
-        v[194] = min(concept_hits / max(len(words), 1), 1.0)
-        v[195] = 1.0 if "?" in text else 0.0
-        v[196] = 1.0 if "!" in text else 0.0
-
         tr_chars = set("çğışöüÇĞİŞÖÜ")
         tr_count = sum(1 for c in text_l if c in tr_chars)
-        v[197]   = tr_count / max(len(text_l), 1)
 
         norm = np.linalg.norm(v)
-        return v / (norm + 1e-8) if norm > 0 else v
+        v = v / (norm + 1e-8) if norm > 0 else v
+
+        # Metadata slots set after normalization so exact values are preserved
+        _m = self.dim - 64   # metadata region starts at dim-64
+        v[_m + 0] = min(len(text_l) / 100.0, 1.0)
+        v[_m + 1] = min(len(words)  / 20.0,  1.0)
+        v[_m + 2] = min(concept_hits / max(len(words), 1), 1.0)
+        v[_m + 3] = 1.0 if "?" in text else 0.0
+        v[_m + 4] = 1.0 if "!" in text else 0.0
+        v[_m + 5] = tr_count / max(len(text_l), 1)
+
+        return v
+
+    def encode_batch(self, texts: list[str]) -> np.ndarray:
+        """N texts → (N, dim) float32. Reuses per-text cache."""
+        vecs = [self.encode(t) for t in texts]
+        if not vecs:
+            return np.empty((0, self.dim), dtype=np.float32)
+        try:
+            from mda.core.accelerator import HAS_TORCH, to_t
+            if HAS_TORCH:
+                import torch
+                return torch.stack([to_t(v) for v in vecs]).cpu().numpy()
+        except ImportError:
+            pass
+        return np.stack(vecs).astype(np.float32)
 
     def register_concept(self, surface: str, category: str = "") -> np.ndarray:
         """
