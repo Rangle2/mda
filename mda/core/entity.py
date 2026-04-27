@@ -15,6 +15,12 @@ class Sense:
     use_count:     int        = 0                      # how many times this sense was selected
     context_hints: list       = field(default_factory=list)  # e.g. ["money", "loan"]
 
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    def __hash__(self) -> int:
+        return id(self)
+
 
 ETA_FAST  = 0.05
 ETA_SLOW  = 0.001
