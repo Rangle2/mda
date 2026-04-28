@@ -61,3 +61,5 @@ data/tr_cache.json
 .pytest_cache/
 .coverage
 htmlcov/
+
+.webui_secret_key
