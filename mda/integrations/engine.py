@@ -817,6 +817,198 @@ class AnthropicEngine(MDAEngine):
             return msg
 
 
+# ---------------------------------------------------------------------------
+# MDABatchEngine — multi-agent / large LLM context builder
+# ---------------------------------------------------------------------------
+
+class MDABatchEngine:
+    """Process N queries in a single GPU pass and return N context strings.
+
+    Designed for multi-agent workloads, large LLM context windows, and
+    codebase analysis — any scenario where multiple independent queries
+    share the same underlying MDA memory.
+
+    Usage::
+
+        engine = MDABatchEngine()
+        contexts = engine.build_context_batch([
+            "legal contract risk analysis",
+            "MDA memory architecture",
+        ])
+        # contexts: list[str] — one per query, ready for LLM injection
+
+    Single-query path (MDAEngine) is completely unaffected.
+    """
+
+    def __init__(
+        self,
+        model: str = "default",
+        dim: int = 512,
+        depth: int = 6,
+        top_k_branches: int = 5,
+        user_id: str = "default",
+        knowledge_path: str | None = None,
+    ) -> None:
+        from mda.core.accelerator import set_mode, MDAMode
+        from mda.inference.associative import AssociativeChain
+
+        set_mode(MDAMode.BATCH)
+
+        self.user_id = user_id
+        self.model   = model
+        self.depth   = depth
+        self.top_k   = top_k_branches
+        self.mda     = MDA(dim=dim)
+
+        # Memory path — same pattern as MDAEngine
+        memory_base = Path(__file__).parent.parent.parent / ".memory" / user_id
+        memory_base.mkdir(parents=True, exist_ok=True)
+
+        slug = re.sub(r"[^a-zA-Z0-9_-]", "_", model)
+
+        # Load order: model-specific → shared
+        for ckpt_path in [str(memory_base / slug), str(memory_base / "shared")]:
+            if os.path.exists(ckpt_path + ".json"):
+                try:
+                    _load(self.mda.registry, self.mda.broca, ckpt_path)
+                    print(f"[MDA] loaded {self.mda.registry.count()} entities")
+                    break
+                except Exception as e:
+                    print(f"[MDA] checkpoint error: {e}")
+
+        # Load md files — same pattern as MDAEngine._discover_md_files
+        base = Path(__file__).parent.parent.parent
+        md_files: list[Path] = []
+
+        global_dir = base / ".memory"
+        if global_dir.exists():
+            md_files.extend(sorted(global_dir.glob("*.md")))
+
+        user_dir = base / ".memory" / user_id
+        if user_dir.exists():
+            md_files.extend(sorted(user_dir.glob("*.md")))
+
+        if md_files:
+            from mda.integrations.loader import Loader
+            loader = Loader(self.mda)
+            for md_path in md_files:
+                try:
+                    count = loader.load_file(str(md_path))
+                    print(f"[MDA] loaded {md_path.name} -> {count} facts")
+                except Exception as e:
+                    print(f"[MDA] md error {md_path.name}: {e}")
+
+        if knowledge_path:
+            self.mda.load(knowledge_path)
+
+        # Dedicated instances so batch engine state never bleeds into MDAEngine.
+        self._chain  = AssociativeChain(self.mda.registry, self.mda.encoder)
+        self._broca  = self.mda.broca
+        self._reason = ReasoningEngine(self.mda.encoder, self.mda.registry)
+
+    # ------------------------------------------------------------------
+    # Core batch API
+    # ------------------------------------------------------------------
+
+    def build_context_batch(self, queries: list[str]) -> list[str]:
+        """N queries → N context strings, entity matrix traversed once per batch.
+
+        Steps:
+          1. Encode all queries                   — encoder.encode_batch
+          2. Find top-k origins per query         — single (N, M) GPU matmul
+          3. BFS expansion per query              — CPU, parallel-safe
+          4. Batch fact scoring across all nodes  — score_facts_batch (GPU)
+          5. Inferred multi-hop paths             — infer_from_chain_batch
+          6. Assemble context strings             — CPU
+        """
+        if not queries:
+            return []
+
+        # Step 1 — encode
+        query_vecs = self.mda.encoder.encode_batch(queries)   # (N, 512)
+        query_vecs = (query_vecs / (
+            np.linalg.norm(query_vecs, axis=1, keepdims=True) + 1e-8
+        )).astype(np.float32)
+
+        # Step 2 + 3 — parallel BFS
+        chain_results = self._chain.expand_batch(
+            query_vecs, top_k=self.top_k, max_depth=self.depth
+        )
+
+        # Step 4 + 5 — batch fact scoring and path inference
+        all_inferred = self._reason.infer_from_chain_batch(
+            chain_results, query_vecs, self._broca,
+            top_k=self.top_k, max_depth=self.depth,
+        )
+
+        # Step 6 — assemble per-query context strings
+        contexts: list[str] = []
+        for i, (query, chain, inferred) in enumerate(
+            zip(queries, chain_results, all_inferred)
+        ):
+            lines: list[str] = []
+            q_vec = query_vecs[i]
+
+            # Origin entity facts
+            if chain and chain.nodes:
+                origin_entity = chain.nodes[0].entity
+                for score, fact in self._broca._score_facts(
+                    origin_entity, q_vec, top_k=3
+                ):
+                    if score >= 0.15:
+                        lines.append(f"[MEMORY] {fact}")
+
+            # Chain node facts (skip origin — already handled above)
+            if chain and chain.nodes:
+                for node in chain.nodes[1:8]:
+                    for score, fact in self._broca._score_facts(
+                        node.entity, q_vec, top_k=2
+                    ):
+                        line = f"[MEMORY] {fact}"
+                        if score >= 0.15 and line not in lines:
+                            lines.append(line)
+
+            # Multi-hop inferred paths
+            for inf in inferred:
+                lines.append(f"[INFERRED] {inf}")
+
+            ctx = "\n".join(lines[:15])
+            contexts.append(ctx[:5000])
+
+        return contexts
+
+    def learn_batch(self, texts: list[str]) -> None:
+        """Learn N facts sequentially, then rebuild the entity matrix once."""
+        for text in texts:
+            self.mda.learn(text)
+        self.mda.registry._em_dirty = True
+        self.mda.registry._build_entity_matrix()
+
+    # ------------------------------------------------------------------
+    # Save
+    # ------------------------------------------------------------------
+
+    def save(self) -> None:
+        from mda.training.checkpoint import save as _save
+        memory_base = Path(__file__).parent.parent.parent / ".memory" / self.user_id
+        memory_base.mkdir(parents=True, exist_ok=True)
+        slug = re.sub(r"[^a-zA-Z0-9_-]", "_", self.model)
+        path = str(memory_base / slug)
+        _save(self.mda.registry, self.mda.broca, path)
+        print(f"[MDA] saved {self.mda.registry.count()} entities")
+
+    # ------------------------------------------------------------------
+    # Pass-through helpers
+    # ------------------------------------------------------------------
+
+    def learn(self, text: str) -> None:
+        self.mda.learn(text)
+
+    def teach(self, surface: str, facts: list[str],
+              category: str = "custom") -> None:
+        self.mda.teach(surface, facts, category=category)
+
+
 if __name__ == "__main__":
     bridge = MDAEngine(model="qwen2.5:9b", smart_filter=False)
     bridge.learn("Kairfy bir hukuki belge analiz platformudur")
