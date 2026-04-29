@@ -203,3 +203,124 @@ class AssociativeChain:
             n.entity.surface for n in
             sorted(result.nodes, key=lambda n: (n.depth, -n.activation))[:5]
         )
+
+    def _expand_from_origins(
+        self,
+        query_vec: np.ndarray,
+        origins: list,
+        max_depth: int,
+        top_k_branches: int,
+    ) -> ChainResult:
+        """BFS expansion from multiple origin entities simultaneously."""
+        dyn_boundary, dyn_syn_min, dyn_query_threshold = self._get_thresholds()
+
+        visited   = {e.id for e in origins}
+        queue     = [
+            (0, e, 1.0, [e.surface], normalize(e.dominant_sense(query_vec)))
+            for e in origins
+        ]
+        all_nodes:  list[ChainNode] = []
+        compound_v: np.ndarray      = normalize(
+            sum(normalize(e.dominant_sense(query_vec)) for e in origins)
+        )
+
+        while queue:
+            depth, entity, activation, path, sense_v = queue.pop(0)
+            all_nodes.append(ChainNode(
+                entity=entity, depth=depth, activation=activation,
+                path=path.copy(), sense_vec=sense_v,
+            ))
+
+            if depth >= max_depth:
+                continue
+
+            compound_v = normalize(bind(compound_v, sense_v))
+
+            synapses = sorted(
+                entity.synapses.values(), key=lambda s: -s.strength
+            )[:top_k_branches]
+
+            for synapse in synapses:
+                if synapse.strength < dyn_syn_min:
+                    continue
+                neighbor = self.registry.get_by_id(synapse.target_id)
+                if neighbor is None or neighbor.id in visited:
+                    continue
+                if cosine(neighbor.v, query_vec) < dyn_query_threshold:
+                    continue
+                visited.add(neighbor.id)
+                neighbor_v = normalize(neighbor.dominant_sense(compound_v))
+                queue.append((
+                    depth + 1, neighbor,
+                    activation * synapse.strength * 0.8,
+                    path + [neighbor.surface],
+                    neighbor_v,
+                ))
+
+        all_nodes.sort(key=lambda n: (n.depth, -n.activation, -n.entity.use_count))
+
+        return ChainResult(
+            nodes=all_nodes,
+            compound_v=compound_v,
+            origin_v=normalize(origins[0].dominant_sense(query_vec)) if origins else query_vec,
+            depth_reached=max((n.depth for n in all_nodes), default=0),
+        )
+
+    def expand_batch(
+        self,
+        query_vecs: np.ndarray,
+        top_k: int = 5,
+        max_depth: int = 6,
+    ) -> list[ChainResult]:
+        """
+        Expand chains for N queries in one pass.
+
+        Uses GPU matmul (if available) for origin lookup, then runs
+        per-query BFS on CPU. Falls back to numpy when no GPU tensor exists.
+
+        Returns list[ChainResult] of length N.
+        """
+        from mda.core.accelerator import HAS_TORCH, is_batch_mode, DEVICE
+
+        n_queries = len(query_vecs)
+        if n_queries == 0:
+            return []
+
+        registry = self.registry
+        registry._build_entity_matrix()
+        em = registry._em_matrix          # (M, D) numpy, always available
+
+        if em is None or len(em) == 0:
+            return [ChainResult(nodes=[], compound_v=q, origin_v=q, depth_reached=0)
+                    for q in query_vecs]
+
+        # ── origin lookup ────────────────────────────────────────────────
+        gpu_ok = is_batch_mode() and HAS_TORCH and registry._em_matrix_gpu is not None
+        if gpu_ok:
+            import torch
+            q_gpu   = torch.from_numpy(query_vecs).to(DEVICE)          # (N, D)
+            em_gpu  = registry._em_matrix_gpu                           # (M, D)
+            scores  = (q_gpu @ em_gpu.T).cpu().numpy()                  # (N, M)
+        else:
+            scores = query_vecs @ em.T                                  # (N, M)
+
+        k = min(top_k, len(em))
+        results: list[ChainResult] = []
+
+        for i in range(n_queries):
+            row     = scores[i]
+            top_idx = np.argsort(row)[::-1][:k]
+            origins = []
+            for idx in top_idx:
+                e = registry.get_by_index(int(idx))
+                if e is not None:
+                    origins.append(e)
+            if not origins:
+                q = query_vecs[i]
+                results.append(ChainResult(nodes=[], compound_v=q, origin_v=q, depth_reached=0))
+                continue
+            results.append(
+                self._expand_from_origins(query_vecs[i], origins, max_depth, top_k)
+            )
+
+        return results

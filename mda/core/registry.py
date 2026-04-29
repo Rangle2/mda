@@ -25,12 +25,15 @@ def _det_seed(surface: str) -> int:
 
 
 class EntityRegistry:
-    def __init__(self):
-        self._entities: dict[str, Entity]  = {}
-        self._surface:  dict[str, str]     = {}
-        self._em_matrix: np.ndarray | None = None   # (N, dim) float32, lazy built
-        self._em_index:  list[str]          = []     # entity ids in matrix row order
-        self._em_dirty:  bool               = True
+    def __init__(self, encoder=None, dim: int = 512):
+        self._encoder      = encoder
+        self.dim           = dim
+        self._entities:    dict[str, Entity]  = {}
+        self._surface:     dict[str, str]     = {}
+        self._em_matrix:   np.ndarray | None  = None   # (N, dim) float32, lazy built
+        self._em_matrix_gpu                   = None   # torch tensor, batch mode only
+        self._em_index:    list[str]           = []     # entity ids in matrix row order
+        self._em_dirty:    bool                = True
 
     def get_or_create(self, surface: str, category: str = "unknown") -> Entity:
         key = surface.lower().strip()
@@ -42,16 +45,20 @@ class EntityRegistry:
         seed   = _det_seed(surface)
         entity = Entity(id=eid, surface=surface)
         entity.category = category
-        if category in CATEGORY_VECTORS:
+        from mda.core.bind import normalize
+        # Initialize v from encoder if available (semantic grounding)
+        if self._encoder is not None:
+            entity.v = normalize(self._encoder.encode(surface))
+        elif category in CATEGORY_VECTORS:
             rng = np.random.default_rng(seed)
             # Scale noise std so cosine similarity stays consistent regardless of dim
             noise_std = 0.05 * np.sqrt(256 / DIM)
             noise = rng.normal(0, noise_std, DIM)
-            from mda.core.bind import normalize
             entity.v = normalize(CATEGORY_VECTORS[category] + noise)
         self._entities[eid]  = entity
         self._surface[key]   = eid
-        self._em_dirty = True
+        self._em_dirty       = True
+        self._em_matrix_gpu  = None
         return entity
 
     def get(self, surface: str) -> Entity | None:
@@ -62,6 +69,12 @@ class EntityRegistry:
 
     def get_by_id(self, eid: str) -> Entity | None:
         return self._entities.get(eid)
+
+    def get_by_index(self, idx: int) -> Entity | None:
+        """Return entity at row *idx* of the entity matrix (built by _build_entity_matrix)."""
+        if idx < 0 or idx >= len(self._em_index):
+            return None
+        return self._entities.get(self._em_index[idx])
 
     def infer_category(self, action_vec: np.ndarray) -> str:
         best_cat = "unknown"
@@ -130,13 +143,15 @@ class EntityRegistry:
         self._surface.pop(key, None)
         for other in self._entities.values():
             other.synapses.pop(entity.id, None)
-        self._em_dirty = True
+        self._em_dirty      = True
+        self._em_matrix_gpu = None
 
     def _build_entity_matrix(self) -> None:
         if not self._entities:
-            self._em_matrix = None
-            self._em_index  = []
-            self._em_dirty  = False
+            self._em_matrix     = None
+            self._em_matrix_gpu = None
+            self._em_index      = []
+            self._em_dirty      = False
             return
         ids  = list(self._entities.keys())
         vecs = np.stack([self._entities[eid].v.astype(np.float32) for eid in ids])
@@ -144,6 +159,16 @@ class EntityRegistry:
         self._em_matrix = vecs / (norms + 1e-8)
         self._em_index  = ids
         self._em_dirty  = False
+        # Build GPU tensor in batch mode if CUDA available
+        try:
+            from mda.core.accelerator import is_batch_mode, HAS_TORCH, DEVICE
+            if is_batch_mode() and HAS_TORCH:
+                import torch
+                self._em_matrix_gpu = torch.from_numpy(self._em_matrix).to(DEVICE)
+            else:
+                self._em_matrix_gpu = None
+        except ImportError:
+            self._em_matrix_gpu = None
 
     def nearest(self, query_vec: np.ndarray, top_k: int = 1
                 ) -> list[tuple[float, "Entity"]]:

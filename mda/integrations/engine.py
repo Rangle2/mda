@@ -351,8 +351,13 @@ class MDAEngine:
             inhibition_threshold = max(0.10, min(0.35, 0.10 + origin_sim * 0.25))
 
             for score, fact in self.mda.broca._score_facts(origin[0], query_vec, top_k=3):
-                if score >= 0.2 and not self._is_junk(fact):
-                    lines.append(f"[MEMORY] {fact}")
+                if score < 0.2 or self._is_junk(fact):
+                    continue
+                conf = self.mda.broca._entity_confidence(origin[0], score, chain_depth=0)
+                if conf < 0.20:
+                    continue
+                tag = "MEMORY" if conf >= 0.50 else "WEAK"
+                lines.append(f"[{tag}:{conf}] {fact}")
         else:
             return ""
 
@@ -384,7 +389,11 @@ class MDAEngine:
                 for score, fact in self.mda.broca._score_facts(entity, query_vec, top_k=top_k):
                     if score < 0.2 or self._is_junk(fact):
                         continue
-                    line = f"[MEMORY] {fact}"
+                    conf = self.mda.broca._entity_confidence(entity, score, chain_depth=node.depth)
+                    if conf < 0.20:
+                        continue
+                    tag  = "MEMORY" if conf >= 0.50 else "WEAK"
+                    line = f"[{tag}:{conf}] {fact}"
                     if line not in lines:
                         lines.append(line)
 
@@ -647,8 +656,13 @@ class AnthropicEngine(MDAEngine):
 
         # More facts for the origin entity
         for score, fact in self.mda.broca._score_facts(origin[0], query_vec, top_k=8):
-            if score >= 0.15 and not self._is_junk(fact):
-                lines.append(f"[MEMORY] {fact}")
+            if score < 0.15 or self._is_junk(fact):
+                continue
+            conf = self.mda.broca._entity_confidence(origin[0], score, chain_depth=0)
+            if conf < 0.20:
+                continue
+            tag = "MEMORY" if conf >= 0.50 else "WEAK"
+            lines.append(f"[{tag}:{conf}] {fact}")
 
         chain_result = self.mda._chain.expand_from_text(user_message)
 
@@ -671,7 +685,11 @@ class AnthropicEngine(MDAEngine):
                 for score, fact in self.mda.broca._score_facts(entity, query_vec, top_k=top_k):
                     if score < 0.15 or self._is_junk(fact):
                         continue
-                    line = f"[MEMORY] {fact}"
+                    conf = self.mda.broca._entity_confidence(entity, score, chain_depth=node.depth)
+                    if conf < 0.20:
+                        continue
+                    tag  = "MEMORY" if conf >= 0.50 else "WEAK"
+                    line = f"[{tag}:{conf}] {fact}"
                     if line not in lines:
                         lines.append(line)
 
@@ -942,6 +960,9 @@ class MDABatchEngine:
         )
 
         # Step 6 — assemble per-query context strings
+        import logging as _logging
+        _log = _logging.getLogger("mda.batch")
+
         contexts: list[str] = []
         for i, (query, chain, inferred) in enumerate(
             zip(queries, chain_results, all_inferred)
@@ -949,14 +970,35 @@ class MDABatchEngine:
             lines: list[str] = []
             q_vec = query_vecs[i]
 
-            # Origin entity facts
+            # Origin relevance gate — skip if origin too distant from query
             if chain and chain.nodes:
                 origin_entity = chain.nodes[0].entity
+                origin_sim = float(np.dot(q_vec, origin_entity.v) /
+                             (np.linalg.norm(q_vec) * np.linalg.norm(origin_entity.v) + 1e-8))
+
+                print(f"[MDA DEBUG] query='{query[:40]}' origin='{origin_entity.surface}' sim={origin_sim:.3f}")
+
+                if origin_sim < 0.15:
+                    print(f"[MDA DEBUG] GATE BLOCKED — origin_sim {origin_sim:.3f} < 0.15")
+                    contexts.append("")
+                    continue
+
+                # Origin entity facts
                 for score, fact in self._broca._score_facts(
                     origin_entity, q_vec, top_k=3
                 ):
-                    if score >= 0.15:
-                        lines.append(f"[MEMORY] {fact}")
+                    if score < 0.15:
+                        continue
+                    fact_vec = self.mda.encoder.encode(fact)
+                    fact_relevance = float(np.dot(q_vec, fact_vec) /
+                                    (np.linalg.norm(q_vec) * np.linalg.norm(fact_vec) + 1e-8))
+                    if fact_relevance < 0.05:
+                        continue
+                    conf = self._broca._entity_confidence(origin_entity, score, chain_depth=0)
+                    if conf < 0.10:
+                        continue
+                    tag = "MEMORY" if conf >= 0.35 else "WEAK"
+                    lines.append(f"[{tag}:{conf}] {fact}")
 
             # Chain node facts (skip origin — already handled above)
             if chain and chain.nodes:
@@ -964,8 +1006,19 @@ class MDABatchEngine:
                     for score, fact in self._broca._score_facts(
                         node.entity, q_vec, top_k=2
                     ):
-                        line = f"[MEMORY] {fact}"
-                        if score >= 0.15 and line not in lines:
+                        if score < 0.15:
+                            continue
+                        fact_vec = self.mda.encoder.encode(fact)
+                        fact_relevance = float(np.dot(q_vec, fact_vec) /
+                                        (np.linalg.norm(q_vec) * np.linalg.norm(fact_vec) + 1e-8))
+                        if fact_relevance < 0.05:
+                            continue
+                        conf = self._broca._entity_confidence(node.entity, score, chain_depth=node.depth)
+                        if conf < 0.10:
+                            continue
+                        tag  = "MEMORY" if conf >= 0.35 else "WEAK"
+                        line = f"[{tag}:{conf}] {fact}"
+                        if line not in lines:
                             lines.append(line)
 
             # Multi-hop inferred paths

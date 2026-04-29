@@ -148,6 +148,74 @@ class ReasoningEngine:
 
         return self._infer_paths_parallel(candidate_paths, query_vec, broca, top_k)
 
+    def infer_from_chain_batch(
+        self,
+        chain_results: list,
+        query_vecs: np.ndarray,
+        broca,
+        top_k: int = 3,
+        max_depth: int = 6,
+    ) -> list[list[str]]:
+        """
+        Batch variant: score unique entities once across all N chains,
+        then assemble per-chain inferred paths from cache.
+        """
+        if not chain_results:
+            return []
+
+        # 1. Collect all unique surfaces across every chain
+        unique_surfaces: set[str] = set()
+        for chain in chain_results:
+            if chain and chain.nodes:
+                for node in chain.nodes:
+                    if node.path:
+                        unique_surfaces.update(node.path)
+
+        # 2. Score each unique entity once using mean query vector
+        mean_q = query_vecs.mean(axis=0).astype(np.float32)
+        entity_scores: dict[str, list[tuple[float, str]]] = {}
+        for surface in unique_surfaces:
+            entity = self.registry.get(surface)
+            if entity is not None:
+                entity_scores[surface] = broca._score_facts(entity, mean_q, top_k=2)
+
+        # 3. Assemble per-chain results
+        all_inferred: list[list[str]] = []
+        for i, chain in enumerate(chain_results):
+            if not chain or not chain.nodes:
+                all_inferred.append([])
+                continue
+
+            candidate_paths: list[list[str]] = []
+            for max_d in (1, 2, 3):
+                for node in [n for n in chain.nodes if n.depth == max_d][:4]:
+                    if node.path:
+                        candidate_paths.append(node.path)
+
+            inferred: list[str] = []
+            seen: set[str] = set()
+            for path in candidate_paths:
+                facts_per_hop: list[str] = []
+                valid = True
+                for surface in path:
+                    scored = entity_scores.get(surface, [])
+                    if not scored or scored[0][0] < CHAIN_THRESHOLD:
+                        valid = False
+                        break
+                    facts_per_hop.append(scored[0][1])
+                if not valid or not facts_per_hop:
+                    continue
+                combined = " — ".join(facts_per_hop)
+                if combined not in seen:
+                    seen.add(combined)
+                    inferred.append(combined)
+                if len(inferred) >= top_k:
+                    break
+
+            all_inferred.append(inferred)
+
+        return all_inferred
+
     def _infer_paths_serial(
         self, paths: list, query_vec: np.ndarray, broca, top_k: int
     ) -> list[str]:

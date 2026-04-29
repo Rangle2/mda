@@ -31,7 +31,7 @@ class MDA:
     def __init__(self, dim: int = 512):
         self.dim      = dim
         self.encoder  = HolisticEncoder(dim)
-        self.registry = EntityRegistry()
+        self.registry = EntityRegistry(encoder=self.encoder, dim=dim)
         self.broca    = BrocaModule(self.encoder, self.registry)
         self._memory     = ConversationMemory()
         self._translator = MDATranslator()

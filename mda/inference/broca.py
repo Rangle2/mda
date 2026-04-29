@@ -200,6 +200,43 @@ class BrocaModule:
     # Confidence
     # ------------------------------------------------------------------
 
+    def _entity_confidence(
+        self,
+        entity,
+        query_score: float,
+        chain_depth: int = 0,
+    ) -> float:
+        """
+        Multi-signal confidence score for an entity's facts.
+        Never penalizes young entities for low use_count alone.
+
+        Signals:
+          query_score    — vector similarity (primary, 0-1)
+          use_count      — maturity signal (logarithmic, saturates at ~50)
+          fact_count     — knowledge density
+          synapse_count  — graph connectivity
+          chain_depth    — proximity (depth 0 = origin, most reliable)
+        """
+        import math
+        facts      = self._entity_facts.get(entity.id, [])
+        fact_count = max(len(facts), 1)
+        use_count  = max(getattr(entity, "use_count", 1), 1)
+        syn_count  = max(len(getattr(entity, "synapses", {})), 0)
+
+        maturity     = min(math.log(use_count + 1) / math.log(52), 1.0)
+        density      = min(fact_count / 10.0, 1.0)
+        connectivity = min(syn_count / 5.0, 1.0)
+        depth_factor = 1.0 / (1.0 + chain_depth * 0.15)
+
+        confidence = (
+            query_score  * 0.50 +
+            maturity     * 0.20 +
+            density      * 0.15 +
+            connectivity * 0.10 +
+            depth_factor * 0.05
+        )
+        return round(min(max(confidence, 0.0), 1.0), 2)
+
     def confidence(self, entity_id: str, query: str) -> float:
         entity = self.registry.get_by_id(entity_id)
         if entity is None:

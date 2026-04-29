@@ -83,3 +83,28 @@ def batch_matmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         tb = to_t(b)
         return torch.mm(ta, tb).cpu().numpy()
     return a @ b
+
+
+# ---------------------------------------------------------------------------
+# MDA Dual Mode — SINGLE (numpy/CPU) vs BATCH (CUDA, high throughput)
+# ---------------------------------------------------------------------------
+
+class MDAMode:
+    SINGLE = "single"
+    BATCH  = "batch"
+
+
+_mode: str = MDAMode.SINGLE
+
+
+def set_mode(mode: str) -> None:
+    global _mode
+    _mode = mode
+
+
+def get_mode() -> str:
+    return _mode
+
+
+def is_batch_mode() -> bool:
+    return _mode == MDAMode.BATCH and HAS_CUDA

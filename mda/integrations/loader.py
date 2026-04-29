@@ -96,13 +96,20 @@ class MarkdownExtractor(BaseExtractor):
         in_code_block = False
 
         def _flush() -> None:
-            if current_lines:
-                para = " ".join(current_lines).strip()
-                if para:
-                    sections.setdefault(current_heading, []).append(para)
-                    if current_heading not in order:
-                        order.append(current_heading)
-                current_lines.clear()
+            if not current_lines:
+                return
+            for raw_line in current_lines:
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                parts = re.split(r'(?<=[.!?])\s+', raw_line)
+                for part in parts:
+                    part = part.strip()
+                    if len(part) >= 15:
+                        sections.setdefault(current_heading, []).append(part)
+                        if current_heading not in order:
+                            order.append(current_heading)
+            current_lines.clear()
 
         for line in text.splitlines():
             stripped = line.strip()
@@ -113,7 +120,7 @@ class MarkdownExtractor(BaseExtractor):
                 continue
             if stripped.startswith("#"):
                 _flush()
-                heading = stripped.lstrip("#").strip()
+                heading = stripped.lstrip("#").strip().title()
                 if heading:
                     current_heading = heading
                 if current_heading not in order:
@@ -388,6 +395,116 @@ class GenericCodeExtractor(BaseExtractor):
 
 
 # ---------------------------------------------------------------------------
+# JSONExtractor
+# ---------------------------------------------------------------------------
+
+class JSONExtractor(BaseExtractor):
+    """Key-value pairs → facts. Nested objects → sub-entities."""
+
+    def can_handle(self, path: str) -> bool:
+        return Path(path).suffix.lower() in {".json", ".jsonl"}
+
+    def extract(self, path: str) -> list[dict]:
+        import json as _json
+        text = Path(path).read_text(encoding="utf-8", errors="ignore")
+        try:
+            data = _json.loads(text)
+        except Exception:
+            return []
+
+        surface = Path(path).stem.replace("_", " ").replace("-", " ").title()
+        results = []
+
+        def _process(obj, name):
+            if isinstance(obj, dict):
+                facts = []
+                for k, v in obj.items():
+                    if isinstance(v, (str, int, float, bool)) and str(v).strip():
+                        facts.append(f"{k}: {v}")
+                    elif isinstance(v, list) and all(isinstance(i, (str, int)) for i in v):
+                        facts.append(f"{k}: {', '.join(str(i) for i in v[:10])}")
+                if facts:
+                    results.append({"surface": name, "facts": facts, "relations": list(obj.keys())})
+                for k, v in obj.items():
+                    if isinstance(v, dict) and v:
+                        _process(v, f"{name} {k}".strip())
+            elif isinstance(obj, list):
+                for i, item in enumerate(obj[:20]):
+                    if isinstance(item, dict):
+                        _process(item, f"{name} item {i}")
+
+        _process(data, surface)
+        return results
+
+
+# ---------------------------------------------------------------------------
+# YAMLExtractor
+# ---------------------------------------------------------------------------
+
+class YAMLExtractor(BaseExtractor):
+    """YAML config/data files → key-value facts."""
+
+    def can_handle(self, path: str) -> bool:
+        return Path(path).suffix.lower() in {".yaml", ".yml"}
+
+    def extract(self, path: str) -> list[dict]:
+        try:
+            import yaml
+        except ImportError:
+            return []
+        text = Path(path).read_text(encoding="utf-8", errors="ignore")
+        try:
+            data = yaml.safe_load(text)
+        except Exception:
+            return []
+        surface = Path(path).stem.replace("_", " ").replace("-", " ").title()
+        facts = []
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, (str, int, float, bool)):
+                    facts.append(f"{k}: {v}")
+                elif isinstance(v, list):
+                    facts.append(f"{k}: {', '.join(str(i) for i in v[:5])}")
+        if not facts:
+            return []
+        return [{"surface": surface, "facts": facts, "relations": list(data.keys()) if isinstance(data, dict) else []}]
+
+
+# ---------------------------------------------------------------------------
+# LogExtractor
+# ---------------------------------------------------------------------------
+
+class LogExtractor(BaseExtractor):
+    """Error logs → error pattern facts grouped by severity."""
+
+    def can_handle(self, path: str) -> bool:
+        return Path(path).suffix.lower() in {".log", ".txt"} and \
+               any(kw in Path(path).name.lower() for kw in ["log", "error", "debug", "trace"])
+
+    def extract(self, path: str) -> list[dict]:
+        text = Path(path).read_text(encoding="utf-8", errors="ignore")
+        groups = {"ERROR": [], "WARNING": [], "INFO": []}
+        for line in text.splitlines():
+            line = line.strip()
+            if len(line) < 20:
+                continue
+            for level in groups:
+                if level in line:
+                    groups[level].append(line[:200])
+                    break
+        results = []
+        surface = Path(path).stem.title()
+        for level, lines in groups.items():
+            if lines:
+                results.append({
+                    "surface":   f"{surface} {level.title()}",
+                    "facts":     lines[:50],
+                    "relations": [surface],
+                })
+        return results
+
+
+# ---------------------------------------------------------------------------
 # PlainTextExtractor
 # ---------------------------------------------------------------------------
 
@@ -450,6 +567,8 @@ _DEFAULT_EXTENSIONS = frozenset({
     ".py", ".md", ".markdown", ".txt",
     ".rs", ".java", ".ts", ".go",
     ".cpp", ".c", ".h", ".hpp",
+    ".json", ".jsonl", ".yaml", ".yml",
+    ".log",
 })
 
 
@@ -481,6 +600,9 @@ class Loader:
         self._extractors: list[BaseExtractor] = [
             PythonExtractor(),
             MarkdownExtractor(),
+            JSONExtractor(),
+            YAMLExtractor(),
+            LogExtractor(),
             GenericCodeExtractor(),
             PlainTextExtractor(),
         ]

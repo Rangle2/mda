@@ -3,6 +3,7 @@ numpy
 torch
 
 # CLI
+open-webui
 rich
 prompt_toolkit
 python-dotenv
