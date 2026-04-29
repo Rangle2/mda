@@ -541,12 +541,23 @@ def _build_concept_vectors(dim: int) -> dict[str, np.ndarray]:
     return vecs
 
 
+_STEM_CACHE: dict[str, str] = {}
+
+
 def _stem_tr(word: str) -> str:
+    try:
+        return _STEM_CACHE[word]
+    except KeyError:
+        pass
     if len(word) <= 3:
+        _STEM_CACHE[word] = word
         return word
     for suffix in TR_SUFFIXES:
         if word.endswith(suffix) and len(word) - len(suffix) >= 2:
-            return word[:-len(suffix)]
+            result = word[:-len(suffix)]
+            _STEM_CACHE[word] = result
+            return result
+    _STEM_CACHE[word] = word
     return word
 
 
@@ -558,9 +569,10 @@ def _trigrams(word: str, n: int = 3) -> list[str]:
 
 class HolisticEncoder:
     def __init__(self, dim: int = DIM):
-        self.dim       = dim
-        self._concepts = _build_concept_vectors(dim)
+        self.dim          = dim
+        self._concepts    = _build_concept_vectors(dim)
         self._tri_vecs: dict[str, np.ndarray] = {}
+        self._encode_cache: dict[str, np.ndarray] = {}
         self._build_trigram_index()
 
     def _build_trigram_index(self) -> None:
@@ -598,6 +610,8 @@ class HolisticEncoder:
         return None
 
     def encode(self, text: str) -> np.ndarray:
+        if text in self._encode_cache:
+            return self._encode_cache[text]
         if not text or not text.strip():
             return np.zeros(self.dim)
 
@@ -647,6 +661,7 @@ class HolisticEncoder:
         v[_m + 4] = 1.0 if "!" in text else 0.0
         v[_m + 5] = tr_count / max(len(text_l), 1)
 
+        self._encode_cache[text] = v
         return v
 
     def encode_batch(self, texts: list[str]) -> np.ndarray:

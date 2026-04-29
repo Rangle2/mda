@@ -339,14 +339,28 @@ class MDA:
             entity.update_memory(input_vec)
 
             entity._ensure_W()
-            pred    = np.tanh(entity.W @ entity.v)
-            error   = pred - input_vec
-            dtanh   = 1.0 - pred ** 2
-            grad    = np.outer(error * dtanh, entity.v) + 0.01 * entity.W
-            entity.W -= weight * 0.05 * grad
-            mx = np.max(np.abs(entity.W))
-            if mx > 10.0:
-                entity.W /= mx
+            if hasattr(entity.W, 'numpy'):
+                import torch
+                from mda.core.accelerator import to_t, to_np
+                v_t     = to_t(entity.v.astype(np.float32))
+                in_t    = to_t(input_vec.astype(np.float32))
+                pred    = torch.tanh(entity.W @ v_t)
+                error   = pred - in_t
+                dtanh   = 1.0 - pred ** 2
+                grad    = torch.outer(error * dtanh, v_t) + 0.01 * entity.W
+                entity.W -= weight * 0.05 * grad
+                mx = float(torch.max(torch.abs(entity.W)).item())
+                if mx > 10.0:
+                    entity.W /= mx
+            else:
+                pred    = np.tanh(entity.W @ entity.v)
+                error   = pred - input_vec
+                dtanh   = 1.0 - pred ** 2
+                grad    = np.outer(error * dtanh, entity.v) + 0.01 * entity.W
+                entity.W -= weight * 0.05 * grad
+                mx = np.max(np.abs(entity.W))
+                if mx > 10.0:
+                    entity.W /= mx
 
             for neuron in entity.neurons:
                 neuron.hebbian_update(input_vec)
