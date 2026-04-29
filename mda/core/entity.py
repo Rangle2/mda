@@ -102,12 +102,13 @@ class Entity:
         self.W = np.zeros((self.dim, self.dim), dtype=np.float32)
 
     def ensemble_activation(self, input_vec: np.ndarray) -> np.ndarray:
-        self._ensure_W()
         alive = [n for n in self.neurons if n.is_alive()]
         if not alive:
-            raw  = np.tanh(self.W @ self.v)
-            norm = np.linalg.norm(raw)
-            return raw / (norm + 1e-8) if norm > 1e-6 else zero_vector()
+            if self.W is not None:
+                raw = np.tanh(self.W @ self.v)
+                norm = np.linalg.norm(raw)
+                return raw / (norm + 1e-8) if norm > 1e-6 else zero_vector()
+            return self.v
 
         weighted_sum = np.zeros(self.dim)
         total_weight = 0.0
@@ -120,9 +121,11 @@ class Entity:
             neuron.hebbian_update(input_vec)
 
         if total_weight < 1e-8:
-            raw  = np.tanh(self.W @ self.v)
-            norm = np.linalg.norm(raw)
-            return raw / (norm + 1e-8) if norm > 1e-6 else zero_vector()
+            if self.W is not None:
+                raw = np.tanh(self.W @ self.v)
+                norm = np.linalg.norm(raw)
+                return raw / (norm + 1e-8) if norm > 1e-6 else zero_vector()
+            return self.v
 
         result = weighted_sum / total_weight
         norm   = np.linalg.norm(result)
