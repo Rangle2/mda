@@ -147,6 +147,39 @@ def mda_load_md(path: str) -> str:
 
 
 @mcp.tool()
+def mda_load_file(path: str) -> str:
+    """Load any supported file (.py, .md, .rs, .ts, .go, .json, .yaml, .txt …) into MDA memory using the Loader pipeline."""
+    engine = _current_engine()
+    p = Path(path.strip().strip("'\""))
+    if not p.exists():
+        return f"File not found: {path}"
+    count = engine.loader.load_file(str(p))
+    return f"Loaded {count} fact(s) from {p.name}"
+
+
+@mcp.tool()
+def mda_load_dir(directory: str, extensions: list[str] = None, recursive: bool = True) -> dict:
+    """Load all supported files in a directory into MDA memory using the Loader pipeline.
+
+    Args:
+        directory:  Root directory to scan.
+        extensions: Optional extension whitelist e.g. [".py", ".md"]. Defaults to all supported.
+        recursive:  Whether to descend into subdirectories (default True).
+    """
+    engine = _current_engine()
+    d = Path(directory.strip().strip("'\""))
+    if not d.exists():
+        return {"error": f"Directory not found: {directory}"}
+    outcomes = engine.loader.load_dir(str(d), extensions=extensions, recursive=recursive)
+    total_facts = sum(outcomes.values())
+    return {
+        "files_processed": len(outcomes),
+        "total_facts": total_facts,
+        "details": {str(Path(p).name): c for p, c in outcomes.items() if c > 0},
+    }
+
+
+@mcp.tool()
 def mda_switch_model(model: str, provider: str = "") -> str:
     """Switch the active model (and optionally provider) used by all MDA tools.
 
