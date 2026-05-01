@@ -44,6 +44,8 @@ class MDAEngine:
         smart_filter: bool = False,
         filter_model: str = "qwen2.5:0.5b",
         user_id: str = "default",
+        provider: str = "ollama",
+        base_url: str = "",
     ) -> None:
         self.mda              = MDA()
         self._reasoning       = ReasoningEngine(self.mda.encoder, self.mda.registry)
@@ -51,6 +53,8 @@ class MDAEngine:
         self.smart_filter     = smart_filter
         self.filter_model     = filter_model
         self.user_id          = user_id
+        self._provider        = provider
+        self._base_url        = base_url
         self._ollama_url      = "http://localhost:11434/api/chat"
         self._recent_learns:  list[str] = []
         self._last_thinking:  str = ""
@@ -577,9 +581,15 @@ class MDAEngine:
         }
 
         try:
-            resp = requests.post(self._ollama_url, json=payload, timeout=_timeout)
-            resp.raise_for_status()
-            raw = resp.json()["message"]["content"]
+            if self._provider == "llama_cpp":
+                url = self._base_url or "http://localhost:11435/v1/chat/completions"
+                resp = requests.post(url, json=payload, timeout=_timeout)
+                resp.raise_for_status()
+                raw = resp.json()["choices"][0]["message"]["content"]
+            else:
+                resp = requests.post(self._ollama_url, json=payload, timeout=_timeout)
+                resp.raise_for_status()
+                raw = resp.json()["message"]["content"]
 
             think_match = _THINK_RE.search(raw)
             self._last_thinking = think_match.group(1).strip() if think_match else ""

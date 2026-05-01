@@ -38,6 +38,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from sentence_transformers import SentenceTransformer
 
 import dotenv
 dotenv.load_dotenv()
@@ -290,7 +291,7 @@ def build_conversation_script() -> list[dict]:
 
 # ── LLM router ─────────────────────────────────────────────────────────────────
 
-def _llm(model: str, messages: list[dict], provider: str, api_key: str = "") -> str:
+def _llm(model: str, messages: list[dict], provider: str, api_key: str = "", base_url: str = "") -> str:
     if provider == "anthropic":
         import anthropic
         key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
@@ -300,6 +301,15 @@ def _llm(model: str, messages: list[dict], provider: str, api_key: str = "") -> 
             model=model, max_tokens=256, system=system, messages=user_msgs,
         )
         raw = resp.content[0].text
+    elif provider == "llama_cpp":
+        import requests
+        url = base_url or "http://localhost:11435/v1/chat/completions"
+        resp = requests.post(url, json={
+            "model": model,
+            "messages": messages,
+            "max_tokens": 256,
+        }, timeout=120)
+        raw = resp.json()["choices"][0]["message"]["content"]
     else:
         import ollama as _ollama
         raw = _ollama.chat(model=model, messages=messages)["message"]["content"]
@@ -328,6 +338,7 @@ class IncrementalChromaRAG:
         model: str,
         provider: str,
         api_key: str = "",
+        base_url: str = "",
         top_k: int = 6,
         collection_name: str = "lcb_bench",
     ) -> None:
@@ -337,6 +348,7 @@ class IncrementalChromaRAG:
         self.model      = model
         self.provider   = provider
         self.api_key    = api_key
+        self.base_url   = base_url
         self.top_k      = top_k
         self._doc_count = 0
 
@@ -358,8 +370,10 @@ class IncrementalChromaRAG:
         )
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
-        from mda.core.bind import normalize
-        return [normalize(self._encoder.encode(t)).tolist() for t in texts]
+        if not hasattr(self, '_st_model'):
+            from sentence_transformers import SentenceTransformer
+            self._st_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
+        return self._st_model.encode(texts, normalize_embeddings=True).tolist()
 
     def add_fact(self, fact_id: str, fact_text: str) -> None:
         """Add a fact to the index — called at the same turn as mda.learn()."""
@@ -402,7 +416,7 @@ class IncrementalChromaRAG:
                 {"role": "system", "content": system},
                 {"role": "user",   "content": question},
             ]
-        return _llm(self.model, messages, self.provider, self.api_key)
+        return _llm(self.model, messages, self.provider, self.api_key, base_url=self.base_url)
 
     @property
     def indexed_facts(self) -> int:
@@ -414,8 +428,9 @@ class IncrementalChromaRAG:
 class SlidingWindowRAG:
     """Original v1 baseline — kept for direct comparison with v2."""
 
-    def __init__(self, model, provider, api_key="", max_context_chars=15_000):
+    def __init__(self, model, provider, api_key="", base_url="", max_context_chars=15_000):
         self.model = model; self.provider = provider; self.api_key = api_key
+        self.base_url = base_url
         self.max_context_chars = max_context_chars
         self.history: list[dict] = []
 
@@ -434,27 +449,28 @@ class SlidingWindowRAG:
     def chat(self, user_msg):
         self.history.append({"role": "user", "content": user_msg})
         msgs = [{"role": "system", "content": self._system()}] + self._trimmed(len(user_msg))
-        resp = _llm(self.model, msgs, self.provider, self.api_key)
+        resp = _llm(self.model, msgs, self.provider, self.api_key, base_url=self.base_url)
         self.history.append({"role": "assistant", "content": resp})
         return resp
 
     def query(self, question):
         msgs = [{"role": "system", "content": self._system()}] + self._trimmed(len(question))
         msgs.append({"role": "user", "content": question})
-        return _llm(self.model, msgs, self.provider, self.api_key)
+        return _llm(self.model, msgs, self.provider, self.api_key, base_url=self.base_url)
 
 
 # ── MDA wrapper ─────────────────────────────────────────────────────────────────
 
-def build_mda_engine(model: str, provider: str, api_key: str) -> MDAEngine:
+def build_mda_engine(model: str, provider: str, api_key: str, base_url: str = "") -> MDAEngine:
     if provider == "anthropic":
         return AnthropicEngine(model=model, user_id="lcb_v2_bench", api_key=api_key)
-    return MDAEngine(model=model, user_id="lcb_v2_bench")
+    return MDAEngine(model=model, user_id="lcb_v2_bench",
+                     provider=provider, base_url=base_url)
 
 
 # ── Judge ────────────────────────────────────────────────────────────────────────
 
-def judge(question, answer, expected, keywords, model, provider, api_key=""):
+def judge(question, answer, expected, keywords, model, provider, api_key="", base_url=""):
     kw_hits  = sum(1 for kw in keywords if kw.lower() in answer.lower())
     kw_score = round(kw_hits / len(keywords), 2) if keywords else 0.0
     prompt = (
@@ -464,7 +480,7 @@ def judge(question, answer, expected, keywords, model, provider, api_key=""):
         "Reply with a single digit: 0, 1, or 2."
     )
     try:
-        raw   = _llm(model, [{"role": "user", "content": prompt}], provider, api_key)
+        raw   = _llm(model, [{"role": "user", "content": prompt}], provider, api_key, base_url=base_url)
         match = re.search(r"[012]", raw)
         score = int(match.group(0)) if match else 0
     except Exception as e:
@@ -519,6 +535,7 @@ def measure_accuracy(
     judge_provider: str,
     api_key: str,
     checkpoint: int,
+    judge_base_url: str = "",
 ) -> list[dict]:
     results = []
     for tc in test_cases:
@@ -526,9 +543,9 @@ def measure_accuracy(
         mda_ans     = mda.query(tc["q"], lang="en")
         sliding_ans = rag_sliding.query(tc["q"]) if rag_sliding else None
 
-        chroma_j  = judge(tc["q"], chroma_ans,  tc["ans"], tc["kw"], judge_model, judge_provider, api_key)
-        mda_j     = judge(tc["q"], mda_ans,     tc["ans"], tc["kw"], judge_model, judge_provider, api_key)
-        sliding_j = judge(tc["q"], sliding_ans, tc["ans"], tc["kw"], judge_model, judge_provider, api_key) if sliding_ans else None
+        chroma_j  = judge(tc["q"], chroma_ans,  tc["ans"], tc["kw"], judge_model, judge_provider, api_key, base_url=judge_base_url)
+        mda_j     = judge(tc["q"], mda_ans,     tc["ans"], tc["kw"], judge_model, judge_provider, api_key, base_url=judge_base_url)
+        sliding_j = judge(tc["q"], sliding_ans, tc["ans"], tc["kw"], judge_model, judge_provider, api_key, base_url=judge_base_url) if sliding_ans else None
 
         row = {
             "checkpoint": checkpoint,
@@ -692,10 +709,14 @@ def main() -> None:
         description="Long-Context Benchmark v2: MDA vs Incremental ChromaDB RAG"
     )
     parser.add_argument("--model",          default="qwen3:4b")
-    parser.add_argument("--provider",       default="ollama", choices=["ollama", "anthropic"])
+    parser.add_argument("--provider",       default="ollama", choices=["ollama", "anthropic", "llama_cpp"])
     parser.add_argument("--api-key",        default="")
+    parser.add_argument("--base-url",       default="",
+                        help="llama.cpp server URL (default: http://localhost:11435/v1/chat/completions)")
     parser.add_argument("--judge",          default=None)
-    parser.add_argument("--judge-provider", default=None, choices=["ollama", "anthropic"])
+    parser.add_argument("--judge-provider", default=None, choices=["ollama", "anthropic", "llama_cpp"])
+    parser.add_argument("--judge-base-url", default="",
+                        help="llama.cpp judge server URL, falls back to --base-url if empty")
     parser.add_argument("--top-k",          type=int, default=6,
                         help="ChromaDB retrieval top-k (default: 6, matches main benchmark)")
     parser.add_argument("--rag-variant",    default="chroma",
@@ -728,12 +749,12 @@ def main() -> None:
     script = build_conversation_script()
 
     console.print("[bold yellow]Initialising MDA engine...[/bold yellow]")
-    mda = build_mda_engine(args.model, args.provider, api_key)
+    mda = build_mda_engine(args.model, args.provider, api_key, base_url=args.base_url)
 
     console.print("[bold yellow]Initialising Incremental ChromaDB RAG...[/bold yellow]")
     rag_chroma = IncrementalChromaRAG(
         model=args.model, provider=args.provider, api_key=api_key,
-        top_k=args.top_k,
+        base_url=args.base_url, top_k=args.top_k,
     )
 
     rag_sliding = None
@@ -741,7 +762,7 @@ def main() -> None:
         console.print("[bold yellow]Initialising Sliding Window RAG (v1 baseline)...[/bold yellow]")
         rag_sliding = SlidingWindowRAG(
             model=args.model, provider=args.provider, api_key=api_key,
-            max_context_chars=args.sliding_window,
+            base_url=args.base_url, max_context_chars=args.sliding_window,
         )
 
     all_results: dict[int, list[dict]] = {}
@@ -767,6 +788,7 @@ def main() -> None:
         results = measure_accuracy(
             mda, rag_chroma, rag_sliding, TEST_CASES,
             judge_model, judge_prov, api_key, cp,
+            judge_base_url=args.judge_base_url or args.base_url,
         )
         console.print(f"[dim]  Done in {time.time()-t0:.1f}s[/dim]")
         all_results[cp] = results

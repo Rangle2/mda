@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mda-memory"
-version = "0.1.2"
+version = "0.1.3"
 description = "Online associative memory for LLMs"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "open-webui",
     "numpy",
     "torch",
     "rich",
