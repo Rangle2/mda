@@ -12,6 +12,7 @@ python-dotenv
 requests
 anthropic
 ollama
+mcp[cli]>=1.0.0
 
 # Benchmark — RAG baseline
 chromadb

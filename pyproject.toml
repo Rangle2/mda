@@ -28,7 +28,8 @@ dependencies = [
 ]
 
 [project.scripts]
-mda = "mda.integrations.cli:main"
+mda     = "mda.integrations.cli:main"
+mda-mcp = "mda.integrations.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
