@@ -18,6 +18,9 @@ It encodes knowledge as **512-dimensional Holographic Distributed Representation
 
 **MDA is not a RAG replacement. It is the persistent learning layer that RAG and LLMs are missing.**
 
+
+![MDA Process](docs/figure1_process.png)
+
 ---
 
 ## Key Properties
@@ -32,6 +35,10 @@ It encodes knowledge as **512-dimensional Holographic Distributed Representation
 ---
 
 ## Benchmark Results
+
+
+![Benchmark](docs/benchmark_chart.png)
+
 
 Evaluated against a strong RAG baseline (bge-large-en-v1.5 + ChromaDB, top-6 retrieval) across 80 questions spanning 8 cognitive categories:
 
@@ -73,14 +80,14 @@ pip install mda-memory
 ### Basic Usage
 
 ```python
-from mda import MDA
+from mda.integrations.engine import MDAEngine
 
-memory = MDA()
-memory.learn("The capital of Veloria is Aranthos.")
-memory.learn("Aranthos was founded by Queen Seraphel in 412 AE.")
+engine = MDAEngine(model="qwen3:4b", user_id="demo")
+engine.learn("Solaris Station was founded by Dr. Mira Voss in 2041.")
 
-context = memory.context_for("Who founded the capital?")
-# → [MEMORY] Aranthos was founded by Queen Seraphel in 412 AE.
+response = engine.chat("Who founded Solaris?")
+print(response)
+# Dr. Mira Voss founded Solaris Station in 2041.
 ```
 
 ### CLI
