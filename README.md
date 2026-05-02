@@ -14,10 +14,9 @@ Large language models can reason but cannot remember. RAG partially addresses th
 
 MDA fills precisely these gaps.
 
-It encodes knowledge as **512-dimensional Holographic Distributed Representations (HDRs)**, connects concepts through a **sparse synapse graph**, and retrieves context by activating entity networks — not by text-chunk similarity search. New knowledge is integrated immediately, without rebuilding any index.
+It encodes knowledge as **512-dimensional Holographic Distributed Representations (HDRs)**, connects concepts through a **sparse synapse graph**, and retrieves context by activating entity networks not by text-chunk similarity search. New knowledge is integrated immediately, without rebuilding any index.
 
 **MDA is not a RAG replacement. It is the persistent learning layer that RAG and LLMs are missing.**
-
 
 ![MDA Process](docs/figure1_process.png)
 
@@ -34,11 +33,43 @@ It encodes knowledge as **512-dimensional Holographic Distributed Representation
 
 ---
 
+## Quick Start
+
+```bash
+pip install mda-memory
+```
+
+```python
+from mda.integrations.engine import MDAEngine
+
+engine = MDAEngine(model="qwen3:4b", user_id="demo")
+engine.learn("Solaris Station was founded by Dr. Mira Voss in 2041.")
+
+response = engine.chat("Who founded Solaris?")
+print(response)
+# Dr. Mira Voss founded Solaris Station in 2041.
+```
+
+### CLI
+
+```bash
+mda --model qwen3:4b
+mda --model claude-haiku-4-5-20251001 --provider anthropic
+```
+
+---
+
+## How Memory Works
+
+Each turn, MDA retrieves relevant context from previous turns and injects it into the LLM prompt with confidence scores, inferred connections, and structured events. Memory grows and strengthens across the conversation without any reindexing.
+
+![MDA Example](docs/mda_example.png)
+
+---
+
 ## Benchmark Results
 
-
 ![Benchmark](docs/benchmark_chart.png)
-
 
 Evaluated against a strong RAG baseline (bge-large-en-v1.5 + ChromaDB, top-6 retrieval) across 80 questions spanning 8 cognitive categories:
 
@@ -57,150 +88,6 @@ Evaluated against a strong RAG baseline (bge-large-en-v1.5 + ChromaDB, top-6 ret
 MDA uses **3.1× less context per query** than RAG while achieving higher overall accuracy.
 
 **Long-context retention (200 turns):** RAG 0% — MDA 92%.
-
-### Ablation Study
-
-| Config | Run 1 | Run 2 | Run 3 | Avg | Δ vs Full |
-|---|---|---|---|---|---|
-| Full MDA | 75.0% | 80.2% | 85.2% | **80.1%** | |
-| −HDR (random encoding) | 70.0% | 71.7% | 81.8% | **74.5%** | −5.6 pp |
-| −Graph (no traversal) | 75.0% | 81.1% | 85.2% | **80.4%** | +0.3 pp |
-| −Oja (static W) | 80.0% | 80.2% | 84.1% | **81.4%** | +1.3 pp |
-
-HDR encoding is the primary contributor — disabling it drops fact retrieval accuracy by up to 17 pp.
-
----
-
-## Quick Start
-
-```bash
-pip install mda-memory
-```
-
-### Basic Usage
-
-```python
-from mda.integrations.engine import MDAEngine
-
-engine = MDAEngine(model="qwen3:4b", user_id="demo")
-engine.learn("Solaris Station was founded by Dr. Mira Voss in 2041.")
-
-response = engine.chat("Who founded Solaris?")
-print(response)
-# Dr. Mira Voss founded Solaris Station in 2041.
-```
-
-### CLI
-
-```bash
-# Ollama
-mda --model qwen3:4b
-
-# Anthropic
-mda --model claude-haiku-4-5-20251001 --provider anthropic
-```
-
----
-
-## Open WebUI Integration
-
-MDA works as a native Open WebUI Filter Function — zero pipeline server required.
-
-1. Copy `mda/integrations/owui_function.py` contents
-2. Open WebUI → Admin Panel → Functions → "+" → paste → Save
-3. Enable globally
-
-Every prompt is enriched with MDA context. Responses are learned automatically. Memory persists across sessions via `.memory/`.
-
----
-
-## Batch Engine (Multi-Agent / Large LLM Context)
-
-For multi-agent workloads or large context windows, use `MDABatchEngine`:
-
-```python
-from mda.integrations.engine import MDABatchEngine
-
-engine = MDABatchEngine(depth=6, top_k_branches=5)
-
-contexts = engine.build_context_batch([
-    "legal contract risk analysis",
-    "MDA memory architecture",
-    "Turkish law obligations",
-])
-# N queries processed in a single GPU pass
-# depth=6 → 15,625 associative paths per query
-```
-
-GPU acceleration activates automatically when PyTorch + CUDA is available. Falls back to numpy silently.
-
----
-
-## GPU Acceleration
-
-MDA uses a **dual-mode** execution strategy:
-
-- **Single query** — numpy/CPU, < 1ms pipeline latency, rutin chat
-- **Batch query** — CUDA, parallel entity matrix traversal, multi-agent
-
-Key finding from RTX 4060 benchmarks: GPU wins only when tensors are **persistent** (no per-call transfer). `EntityMatrix` and `_fact_tensor_cache` are kept on GPU between queries; only the query vector (2KB) transfers per call.
-
-Crossover point: ~512 entities for `EntityMatrix` matmul, ~4 facts for `_score_facts` batch path.
-
----
-
-## Project Structure
-
-```
-mda/
-├── mda/
-│   ├── mda.py
-│   ├── core/
-│   │   ├── accelerator.py  # numpy/torch adapter, device detection
-│   │   ├── bind.py         # HDR ops (dim=512)
-│   │   ├── encoder.py      # HolisticEncoder: text → 512-dim vector
-│   │   ├── entity.py       # Entity: v, r, h, W, neurons, synapses
-│   │   ├── neuron.py       # Neuron (Oja rule), Synapse (Hebbian)
-│   │   └── registry.py     # EntityRegistry + EntityMatrix cache
-│   ├── inference/
-│   │   ├── associative.py  # AssociativeChain + dyn_threshold cache
-│   │   ├── broca.py        # BrocaModule: W-hybrid scoring + batch path
-│   │   ├── reasoning.py    # ReasoningEngine: parallel path inference
-│   │   └── memory.py       # ConversationMemory
-│   ├── training/
-│   │   └── checkpoint.py   # save/load: float32, dim validation
-│   └── integrations/
-│       ├── engine.py       # MDAEngine + MDABatchEngine
-│       ├── loader.py       # AST-based markdown/code indexer
-│       ├── cli.py          # Interactive CLI
-│       └── owui_function.py # Open WebUI Filter Function
-├── benchmark/
-└── tests/
-```
-
----
-
-## Running Benchmarks
-
-```bash
-# Main benchmark
-python benchmark/benchmark.py --model qwen3:4b
-
-# Long-context retention
-python benchmark/long_context_benchmark.py --model qwen3:4b
-
-# Ablation study
-python benchmark/full_benchmark/ablation_study.py \
-    --md benchmark/full_benchmark/veloria_economy.md \
-         benchmark/full_benchmark/veloria_science.md \
-         benchmark/full_benchmark/zephyria.md \
-    --model qwen3:8b \
-    --judge claude-haiku-4-5-20251001 \
-    --judge-provider anthropic
-
-# GPU latency benchmark
-python benchmark/benchmark_gpu.py --entities 100 500 1000 5000
-```
 
 ---
 
@@ -225,16 +112,45 @@ score = 0.35·s_query + 0.45·s_W + 0.20·s_sense
 
 ---
 
+## Open WebUI Integration
+
+MDA works as a native Open WebUI Filter Function — zero pipeline server required.
+
+1. Copy `mda/integrations/owui_function.py` contents
+2. Open WebUI → Admin Panel → Functions → "+" → paste → Save
+3. Enable globally
+
+---
+
+## Batch Engine
+
+For multi-agent workloads or large context windows:
+
+```python
+from mda.integrations.engine import MDABatchEngine
+
+engine = MDABatchEngine(depth=6, top_k_branches=5)
+contexts = engine.build_context_batch([
+    "legal contract risk analysis",
+    "MDA memory architecture",
+])
+# depth=6 → 15,625 associative paths per query
+```
+
+GPU acceleration activates automatically when PyTorch + CUDA is available.
+
+---
+
 ## Roadmap
 
-- [x] **GPU acceleration** — EntityMatrix matmul, persistent tensor cache, batch scoring
-- [x] **512-dim HDR** — higher representation capacity, better entity separation
-- [x] **Open WebUI integration** — native Filter Function, zero dependencies
-- [x] **Batch engine** — N queries in single GPU pass, multi-agent ready
-- [ ] **`mda.cloud` API** — persistent memory as a service
-- [ ] **MDA + RAG hybrid** — offline corpus retrieval + online learning
-- [ ] **Low-rank W** — W ≈ A×B for even higher-dimensional HDRs
-- [ ] **Independent benchmark** — community-constructed evaluation set
+- [x] GPU acceleration — EntityMatrix matmul, persistent tensor cache
+- [x] 512-dim HDR — higher representation capacity
+- [x] Open WebUI integration — native Filter Function
+- [x] Batch engine — N queries in single GPU pass
+- [ ] `mda.cloud` API — persistent memory as a service
+- [ ] MDA + RAG hybrid — offline corpus retrieval + online learning
+- [ ] Low-rank W — W ≈ A×B for higher-dimensional HDRs
+- [ ] Independent benchmark — community-constructed evaluation set
 
 ---
 
