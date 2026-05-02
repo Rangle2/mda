@@ -117,6 +117,10 @@ class ConversationMemory:
             lines.append(f"{prefix}: {turn.text[:120]}")
         return "\n".join(lines)[:max_chars]
 
+    def recent(self, n: int = 4) -> list[Turn]:
+        """Return the last *n* turns in chronological order."""
+        return list(self._turns)[-n:]
+
     def recent_entities(self, n: int = 3) -> list[str]:
         seen: list[str] = []
         for turn in reversed(self._turns):

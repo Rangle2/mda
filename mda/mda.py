@@ -656,6 +656,17 @@ class MDA:
                              [e.surface for e in entities])
         return self
 
+    def is_looping(self, threshold: float = 0.90, window: int = 4) -> bool:
+        """Return True if the last *window* memory turns are all mutually
+        similar above *threshold* — a sign the conversation is stuck in a loop."""
+        from mda.core.bind import cosine
+        recent = self._memory.recent(window)
+        if len(recent) < window:
+            return False
+        vecs = [m.vector for m in recent]
+        scores = [cosine(vecs[i], vecs[i + 1]) for i in range(len(vecs) - 1)]
+        return all(s >= threshold for s in scores)
+
     def context_for(self, query: str) -> str:
         """Return memory context string for the given query — no LLM required.
 
