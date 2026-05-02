@@ -13,6 +13,7 @@ from mda.inference.memory import ConversationMemory
 from mda.inference.translator import MDATranslator
 from mda.inference.associative import AssociativeChain
 from mda.core.bind import normalize
+from mda.core.event import EventFrame, time_encode, event_cosine
 
 
 def _load_stopwords(filename: str) -> frozenset:
@@ -39,6 +40,8 @@ class MDA:
         self._turn_count:   int            = 0
         self._session_meta: dict           = {}
         self._history:      list           = []
+        # EventFrame store: list of (timestamp, frame, description_text)
+        self._event_store: list[tuple[float, EventFrame, str]] = []
 
     def load(self, path: str, streaming: bool = False,
              max_entities: int | None = None) -> "MDA":
@@ -120,6 +123,65 @@ class MDA:
             from mda.core.bind import bind
             e1.add_synapse(e2, bind)
             e2.add_synapse(e1, bind)
+        return self
+
+    def record_event(
+        self,
+        agent:      str | None = None,
+        verb:       str | None = None,
+        patient:    str | None = None,
+        location:   str | None = None,
+        instrument: str | None = None,
+        cause:      str | None = None,
+        result:     str | None = None,
+        t:          float | None = None,
+        step:       int | None = None,
+    ) -> "MDA":
+        """Record a structured event into the event store.
+
+        Each named argument is a surface string or None.  The corresponding
+        entity vector is looked up (or encoded on the fly); missing slots are
+        left as None in the EventFrame.  Pass *t* (Unix timestamp) and/or
+        *step* (turn counter) to attach temporal encoding to the time slot.
+
+        Example::
+
+            mda.record_event(agent="Alice", verb="builds", patient="MDA")
+        """
+        import time as _time
+
+        def _slot_vec(surface: str | None) -> np.ndarray | None:
+            if surface is None:
+                return None
+            ent = self.registry.get(surface)
+            if ent is not None:
+                return ent.v.copy()
+            return normalize(self.encoder.encode(surface))
+
+        t_vec: np.ndarray | None = None
+        if t is not None or step is not None:
+            t_val = t if t is not None else _time.time()
+            t_vec = time_encode(t_val, step=step)
+
+        frame = EventFrame(
+            agent      = _slot_vec(agent),
+            verb       = _slot_vec(verb),
+            patient    = _slot_vec(patient),
+            location   = _slot_vec(location),
+            instrument = _slot_vec(instrument),
+            cause      = _slot_vec(cause),
+            result     = _slot_vec(result),
+            time       = t_vec,
+        )
+
+        parts = [s for s in [agent, verb, patient, location] if s]
+        desc  = " | ".join(parts) if parts else "(unnamed event)"
+        self._event_store.append((_time.time(), frame, desc))
+
+        # Rolling window: keep at most 500 events
+        if len(self._event_store) > 500:
+            self._event_store = self._event_store[-500:]
+
         return self
 
     def encode(self, text: str) -> np.ndarray:
@@ -230,11 +292,35 @@ class MDA:
     _LOOKUP_STOPWORDS  = _load_stopwords("stopwords.txt")
     _CONTENT_STOPWORDS = _load_stopwords("stopwords_content.txt")
     _VERB_STOPWORDS    = frozenset({
-        "built", "build", "building", "created", "create",
-        "developed", "develop", "founded", "found", "started",
-        "launched", "designed", "wrote", "written", "made",
+        # build family
+        "built", "build", "builds", "building",
+        # create family
+        "created", "create", "creates", "creating",
+        # develop family
+        "developed", "develop", "develops", "developing",
+        # found / launch / start
+        "founded", "found", "founds", "founding",
+        "started", "start", "starts", "starting",
+        "launched", "launch", "launches", "launching",
+        # design / write / make
+        "designed", "design", "designs", "designing",
+        "wrote", "write", "writes", "written", "writing",
+        "made", "make", "makes", "making",
+        # say / name / show
         "called", "named", "shown", "given", "told", "said",
-        "works", "worked", "runs", "running", "used", "using",
+        "calls", "names", "shows", "gives", "tells", "says",
+        # work / run / use
+        "works", "worked", "work", "working",
+        "runs", "running", "run", "ran",
+        "used", "uses", "using", "use",
+        # implement / deploy / release
+        "implemented", "implement", "implements", "implementing",
+        "deployed", "deploy", "deploys", "deploying",
+        "released", "release", "releases", "releasing",
+        # fix / update / extend
+        "fixed", "fix", "fixes", "fixing",
+        "updated", "update", "updates", "updating",
+        "extended", "extend", "extends", "extending",
     })
 
     def _find_entities_from_text(self, text: str) -> list:
@@ -339,28 +425,14 @@ class MDA:
             entity.update_memory(input_vec)
 
             entity._ensure_W()
-            if hasattr(entity.W, 'numpy'):
-                import torch
-                from mda.core.accelerator import to_t, to_np
-                v_t     = to_t(entity.v.astype(np.float32))
-                in_t    = to_t(input_vec.astype(np.float32))
-                pred    = torch.tanh(entity.W @ v_t)
-                error   = pred - in_t
-                dtanh   = 1.0 - pred ** 2
-                grad    = torch.outer(error * dtanh, v_t) + 0.01 * entity.W
-                entity.W -= weight * 0.05 * grad
-                mx = float(torch.max(torch.abs(entity.W)).item())
-                if mx > 10.0:
-                    entity.W /= mx
-            else:
-                pred    = np.tanh(entity.W @ entity.v)
-                error   = pred - input_vec
-                dtanh   = 1.0 - pred ** 2
-                grad    = np.outer(error * dtanh, entity.v) + 0.01 * entity.W
-                entity.W -= weight * 0.05 * grad
-                mx = np.max(np.abs(entity.W))
-                if mx > 10.0:
-                    entity.W /= mx
+            pred    = np.tanh(entity.W @ entity.v)
+            error   = pred - input_vec
+            dtanh   = 1.0 - pred ** 2
+            grad    = np.outer(error * dtanh, entity.v) + 0.01 * entity.W
+            entity.W -= weight * 0.05 * grad
+            mx = np.max(np.abs(entity.W))
+            if mx > 10.0:
+                entity.W /= mx
 
             for neuron in entity.neurons:
                 neuron.hebbian_update(input_vec)
@@ -387,13 +459,26 @@ class MDA:
     # Public API: learn / prompt
     # ------------------------------------------------------------------
 
-    def learn(self, text: str, source: str = "user") -> "MDA":
-        """Process text as explicit learning — updates W, adds senses."""
+    def learn(self, text: str, source: str = "user",
+              _record_event: bool = True) -> "MDA":
+        """Process text as explicit learning — updates W, adds senses.
+
+        Pass ``source="load"`` (or ``_record_event=False``) when ingesting
+        files or documentation so that conversation memory and the event
+        store are not polluted with bulk-loading artefacts.
+        """
+        if source == "load":
+            _record_event = False
         import re
         from mda.core.bind import bind_many
         en_text   = self._translator.to_english(text)
         input_vec = normalize(self.encoder.encode(en_text))
-        entities  = self._find_entities_from_text(en_text)
+        # recognized_entities: only surfaces that exist in the registry
+        # before bootstrapping.  Used for event auto-recording so that
+        # bootstrap-derived noun-entities (e.g. "Builds" from "builds")
+        # never become event agents or patients.
+        recognized_entities = self._find_entities_from_text(en_text)
+        entities  = list(recognized_entities)
         seen_ids  = {e.id for e in entities}
 
         # Bootstrap entities from all content words (new and existing)
@@ -451,8 +536,41 @@ class MDA:
             for _e in entities:
                 if _e.surface[0].isupper():
                     self.broca.store_facts(_e.id, [en_text])
-        self._memory.add("learn", en_text, input_vec,
-                         [e.surface for e in entities])
+
+        # Auto-record a structural event — only for interactive learning,
+        # not bulk file ingestion.
+        # Quality gates:
+        #   1. _record_event must be True (False for source="load")
+        #   2. At least 2 registry-recognized entities (not bootstrap nouns)
+        #   3. A verb token must be present in the text
+        if _record_event and len(recognized_entities) >= 2:
+            import time as _time
+            verb_word = next(
+                (tok for tok in en_text.lower().split()
+                 if tok in self._VERB_STOPWORDS),
+                None,
+            )
+            if verb_word:
+                frame = EventFrame(
+                    agent   = recognized_entities[0].v.copy(),
+                    verb    = normalize(self.encoder.encode(verb_word)),
+                    patient = recognized_entities[1].v.copy(),
+                    time    = time_encode(float(_time.time()),
+                                          step=self._turn_count),
+                )
+                parts = [recognized_entities[0].surface, verb_word,
+                         recognized_entities[1].surface]
+                self._event_store.append(
+                    (_time.time(), frame, " | ".join(parts))
+                )
+                if len(self._event_store) > 500:
+                    self._event_store = self._event_store[-500:]
+
+        # Only add to conversation memory for interactive learning; bulk
+        # loading (source="load") must not pollute the memory summary.
+        if source != "load":
+            self._memory.add("learn", en_text, input_vec,
+                             [e.surface for e in entities])
         return self
 
     def context_for(self, query: str) -> str:
@@ -516,6 +634,7 @@ class MDA:
                         if line not in lines:
                             lines.append(line)
 
+            _rel_seen: set[frozenset] = set()
             for node in chain_result.nodes[:6]:
                 entity = node.entity
                 if float(cosine(entity.v, query_vec)) < inhibition_threshold:
@@ -530,11 +649,25 @@ class MDA:
                         continue
                     other = self.registry.get_by_id(syn_id)
                     if other:
+                        rel_key = frozenset({entity.id, other.id})
+                        if rel_key in _rel_seen:
+                            continue
+                        _rel_seen.add(rel_key)
                         eff = syn.decayed_strength(_now)
                         lines.append(
                             f"[MEMORY] {entity.surface} -> {other.surface} "
                             f"(confidence: {eff:.2f})"
                         )
+
+        # Event memory — gate by cosine relevance to query vector.
+        # retrieval_vec() uses un-permuted slot sum so it stays aligned
+        # with HolisticEncoder text embeddings (encode() is permuted HDC,
+        # which is ~0 cosine with text queries).
+        _EVENT_THRESHOLD = 0.20
+        from mda.core.bind import cosine as _cosine
+        for _ts, frame, desc in reversed(self._event_store[-50:]):
+            if _cosine(frame.retrieval_vec(), query_vec) >= _EVENT_THRESHOLD:
+                lines.append(f"[EVENT] {desc}")
 
         seen:  set[str]  = set()
         final: list[str] = []
@@ -542,7 +675,7 @@ class MDA:
             if line not in seen:
                 seen.add(line)
                 final.append(line)
-            if len(final) >= 10:
+            if len(final) >= 12:
                 break
 
         result = "\n".join(final)

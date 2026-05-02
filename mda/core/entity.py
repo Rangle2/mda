@@ -90,15 +90,6 @@ class Entity:
     def _ensure_W(self) -> None:
         if self.W is not None:
             return
-        try:
-            from mda.core.accelerator import HAS_TORCH, DEVICE
-            if HAS_TORCH:
-                import torch
-                self.W = torch.zeros(self.dim, self.dim,
-                                     dtype=torch.float32, device=DEVICE)
-                return
-        except ImportError:
-            pass
         self.W = np.zeros((self.dim, self.dim), dtype=np.float32)
 
     def ensemble_activation(self, input_vec: np.ndarray) -> np.ndarray:

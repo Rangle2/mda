@@ -98,6 +98,25 @@ class ConversationMemory:
         text = "\n".join(lines)
         return text[:max_chars]
 
+    def conversation_summary(self, max_chars: int = 400) -> str:
+        """Return summary of real conversation turns only.
+
+        Filters out bulk-ingestion turns (role='learn', role='experience')
+        so that file-loading artefacts never appear in the context window.
+        Only 'user' and 'assistant' roles are included.
+        """
+        conv_turns = [
+            t for t in self._turns
+            if t.role in ("user", "assistant")
+        ]
+        if not conv_turns:
+            return ""
+        lines = []
+        for turn in conv_turns[-6:]:
+            prefix = "User" if turn.role == "user" else "MDA"
+            lines.append(f"{prefix}: {turn.text[:120]}")
+        return "\n".join(lines)[:max_chars]
+
     def recent_entities(self, n: int = 3) -> list[str]:
         seen: list[str] = []
         for turn in reversed(self._turns):

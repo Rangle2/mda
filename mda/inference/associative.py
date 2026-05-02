@@ -74,13 +74,18 @@ class AssociativeChain:
                     synapse_strs.append(syn.strength)
 
         if synapse_sims:
-            dyn_boundary        = max(min(synapse_sims) * 0.8, -0.9)
+            # Use 20th-percentile similarity instead of min to avoid extreme
+            # negative anchors that let unrelated nodes pass the boundary gate.
+            p20              = float(np.percentile(synapse_sims, 20))
+            dyn_boundary        = max(p20 * 0.8, -0.20)   # floor: never below -0.20
             dyn_syn_min         = min(synapse_strs) * 0.9
-            dyn_query_threshold = min(dyn_boundary, 0.0)
+            # Query threshold must be positive so the gate is meaningful;
+            # was min(dyn_boundary, 0.0) which is always ≤ 0 (gate was off).
+            dyn_query_threshold = max(dyn_boundary * 0.5, 0.05)
         else:
-            dyn_boundary        = -0.5
+            dyn_boundary        = -0.20
             dyn_syn_min         = 0.01
-            dyn_query_threshold = -0.5
+            dyn_query_threshold =  0.05
 
         self._thresh_cache        = (dyn_boundary, dyn_syn_min, dyn_query_threshold)
         self._thresh_entity_count = current_count
@@ -122,7 +127,7 @@ class AssociativeChain:
             if depth >= MAX_DEPTH:
                 continue
 
-            compound_v = normalize(bind(compound_v, sense_v))
+            compound_v = normalize(compound_v + sense_v)
 
             synapses = sorted(
                 entity.synapses.values(), key=lambda s: -s.strength
@@ -234,7 +239,7 @@ class AssociativeChain:
             if depth >= max_depth:
                 continue
 
-            compound_v = normalize(bind(compound_v, sense_v))
+            compound_v = normalize(compound_v + sense_v)
 
             synapses = sorted(
                 entity.synapses.values(), key=lambda s: -s.strength

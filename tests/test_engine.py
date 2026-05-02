@@ -226,7 +226,7 @@ class TestBuildContext:
         engine.teach("Python", ["Python is interpreted.", "Python was created by Guido."])
         result = engine._build_context("Python programming")
         if result:
-            assert "[MEMORY]" in result
+            assert "[MEMORY:" in result
 
     def test_respects_char_limit(self):
         engine = MDAEngine()

@@ -180,6 +180,44 @@ def mda_load_dir(directory: str, extensions: list[str] = None, recursive: bool =
 
 
 @mcp.tool()
+def mda_record_event(
+    agent:      str = "",
+    verb:       str = "",
+    patient:    str = "",
+    location:   str = "",
+    instrument: str = "",
+    cause:      str = "",
+    result:     str = "",
+) -> str:
+    """Record a structured role-aware event into MDA event memory.
+
+    Each argument is an optional surface string (entity name or free text).
+    Empty strings are treated as absent slots. The event is encoded as a
+    512-dim HDC vector and stored; it will appear as ``[EVENT]`` lines in
+    future ``mda_context`` calls when the query is semantically relevant.
+
+    Example::
+
+        mda_record_event(agent="Alice", verb="builds", patient="MDA")
+    """
+    engine = _current_engine()
+    kwargs = {
+        k: v or None
+        for k, v in {
+            "agent": agent, "verb": verb, "patient": patient,
+            "location": location, "instrument": instrument,
+            "cause": cause, "result": result,
+        }.items()
+    }
+    filled = {k: v for k, v in kwargs.items() if v}
+    if not filled:
+        return "No slots provided — event not recorded"
+    engine.mda.record_event(**kwargs)
+    parts = [f"{k}={v}" for k, v in filled.items()]
+    return f"Recorded event: {', '.join(parts)}"
+
+
+@mcp.tool()
 def mda_switch_model(model: str, provider: str = "") -> str:
     """Switch the active model (and optionally provider) used by all MDA tools.
 
@@ -282,6 +320,7 @@ def mda_stats() -> dict:
             "entity_count":  n_entities,
             "synapse_count": n_synapses,
             "fact_count":    n_facts,
+            "event_count":   len(engine.mda._event_store),
         }
     batch_stats: dict | None = None
     if _batch_engine is not None:

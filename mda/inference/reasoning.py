@@ -194,6 +194,7 @@ class ReasoningEngine:
 
             inferred: list[str] = []
             seen: set[str] = set()
+            seen_starts: set[str] = set()   # first-fact dedup: no prefix chains
             for path in candidate_paths:
                 facts_per_hop: list[str] = []
                 valid = True
@@ -203,11 +204,14 @@ class ReasoningEngine:
                         valid = False
                         break
                     facts_per_hop.append(scored[0][1])
-                if not valid or not facts_per_hop:
+                if not valid or not facts_per_hop or len(set(facts_per_hop)) < len(facts_per_hop):
+                    continue
+                if facts_per_hop[0] in seen_starts:
                     continue
                 combined = " — ".join(facts_per_hop)
                 if combined not in seen:
                     seen.add(combined)
+                    seen_starts.add(facts_per_hop[0])
                     inferred.append(combined)
                 if len(inferred) >= top_k:
                     break
@@ -222,6 +226,7 @@ class ReasoningEngine:
         """Original sequential logic, kept for testing equivalence."""
         inferred: list[str] = []
         seen: set[str] = set()
+        seen_starts: set[str] = set()   # first-fact dedup: no prefix chains
         for path in paths:
             facts_per_hop: list[str] = []
             valid = True
@@ -235,11 +240,14 @@ class ReasoningEngine:
                     valid = False
                     break
                 facts_per_hop.append(scored[0][1])
-            if not valid or not facts_per_hop:
+            if not valid or not facts_per_hop or len(set(facts_per_hop)) < len(facts_per_hop):
+                continue
+            if facts_per_hop[0] in seen_starts:
                 continue
             combined = " — ".join(facts_per_hop)
             if combined not in seen:
                 seen.add(combined)
+                seen_starts.add(facts_per_hop[0])
                 inferred.append(combined)
             if len(inferred) >= top_k:
                 break
@@ -269,6 +277,7 @@ class ReasoningEngine:
         # 2. Assemble paths from cached scores
         inferred: list[str] = []
         seen: set[str] = set()
+        seen_starts: set[str] = set()   # first-fact dedup: no prefix chains
         for path in paths:
             facts_per_hop: list[str] = []
             valid = True
@@ -278,11 +287,14 @@ class ReasoningEngine:
                     valid = False
                     break
                 facts_per_hop.append(scored[0][1])
-            if not valid or not facts_per_hop:
+            if not valid or not facts_per_hop or len(set(facts_per_hop)) < len(facts_per_hop):
+                continue
+            if facts_per_hop[0] in seen_starts:
                 continue
             combined = " — ".join(facts_per_hop)
             if combined not in seen:
                 seen.add(combined)
+                seen_starts.add(facts_per_hop[0])
                 inferred.append(combined)
             if len(inferred) >= top_k:
                 break

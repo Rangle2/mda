@@ -282,7 +282,7 @@ class MDAEngine:
             if len(para_text) < 30:
                 continue
             en_para = self.mda._translator.to_english(para_text)
-            self.mda.learn(en_para)
+            self.mda.learn(en_para, source="load")
             entities = self.mda._find_entities_from_text(en_para)
             for entity in entities:
                 if entity.surface[0].isupper():
@@ -360,7 +360,7 @@ class MDAEngine:
                 conf = self.mda.broca._entity_confidence(origin[0], score, chain_depth=0)
                 if conf < 0.20:
                     continue
-                tag = "MEMORY" if conf >= 0.50 else "WEAK"
+                tag = "MEMORY" if conf >= 0.35 else "WEAK"
                 lines.append(f"[{tag}:{conf}] {fact}")
         else:
             return ""
@@ -396,7 +396,7 @@ class MDAEngine:
                     conf = self.mda.broca._entity_confidence(entity, score, chain_depth=node.depth)
                     if conf < 0.20:
                         continue
-                    tag  = "MEMORY" if conf >= 0.50 else "WEAK"
+                    tag  = "MEMORY" if conf >= 0.35 else "WEAK"
                     line = f"[{tag}:{conf}] {fact}"
                     if line not in lines:
                         lines.append(line)
@@ -451,17 +451,30 @@ class MDAEngine:
                 if inf not in lines:
                     lines.append(f"[INFERRED] {inf}")
 
-        mem_summary = self.mda._memory.summary()
+        mem_summary = self.mda._memory.conversation_summary()
         if mem_summary.strip() and not self._is_junk(mem_summary):
             lines.append(f"[MEMORY] {mem_summary}")
 
-        seen:  set[str]  = set()
+        # EventFrame memory — gated by cosine relevance to query.
+        # retrieval_vec() uses un-permuted slot sum, aligned with text embeddings.
+        _EVENT_THRESHOLD = 0.20
+        from mda.core.bind import cosine as _cosine
+        for _ts, frame, desc in reversed(self.mda._event_store[-30:]):
+            if _cosine(frame.retrieval_vec(), query_vec) >= _EVENT_THRESHOLD:
+                lines.append(f"[EVENT] {desc}")
+
+        # Content-aware dedup: strip numeric confidence score from tag prefix
+        # so [MEMORY:0.56] text and [MEMORY:0.55] text are treated as the same.
+        import re as _re
+        _score_re = re.compile(r'^\[(?:MEMORY|WEAK):[0-9.]+\] ')
+        seen_content: set[str] = set()
         final: list[str] = []
         for line in lines:
-            if line not in seen:
-                seen.add(line)
+            key = _score_re.sub('', line)
+            if key not in seen_content:
+                seen_content.add(key)
                 final.append(line)
-            if len(final) >= 10:
+            if len(final) >= 12:
                 break
 
         result = "\n".join(final)
@@ -671,7 +684,7 @@ class AnthropicEngine(MDAEngine):
             conf = self.mda.broca._entity_confidence(origin[0], score, chain_depth=0)
             if conf < 0.20:
                 continue
-            tag = "MEMORY" if conf >= 0.50 else "WEAK"
+            tag = "MEMORY" if conf >= 0.35 else "WEAK"
             lines.append(f"[{tag}:{conf}] {fact}")
 
         chain_result = self.mda._chain.expand_from_text(user_message)
@@ -698,7 +711,7 @@ class AnthropicEngine(MDAEngine):
                     conf = self.mda.broca._entity_confidence(entity, score, chain_depth=node.depth)
                     if conf < 0.20:
                         continue
-                    tag  = "MEMORY" if conf >= 0.50 else "WEAK"
+                    tag  = "MEMORY" if conf >= 0.35 else "WEAK"
                     line = f"[{tag}:{conf}] {fact}"
                     if line not in lines:
                         lines.append(line)
@@ -749,15 +762,26 @@ class AnthropicEngine(MDAEngine):
                 if inf not in lines:
                     lines.append(f"[INFERRED] {inf}")
 
-        mem_summary = self.mda._memory.summary()
+        mem_summary = self.mda._memory.conversation_summary()
         if mem_summary.strip() and not self._is_junk(mem_summary):
             lines.append(f"[MEMORY] {mem_summary}")
 
-        seen:  set[str]  = set()
+        # EventFrame memory — gated by cosine relevance to query.
+        # retrieval_vec() uses un-permuted slot sum, aligned with text embeddings.
+        _EVENT_THRESHOLD = 0.20
+        from mda.core.bind import cosine as _cosine
+        for _ts, frame, desc in reversed(self.mda._event_store[-30:]):
+            if _cosine(frame.retrieval_vec(), query_vec) >= _EVENT_THRESHOLD:
+                lines.append(f"[EVENT] {desc}")
+
+        import re as _re
+        _score_re = _re.compile(r'^\[(?:MEMORY|WEAK):[0-9.]+\] ')
+        seen_content: set[str] = set()
         final: list[str] = []
         for line in lines:
-            if line not in seen:
-                seen.add(line)
+            key = _score_re.sub('', line)
+            if key not in seen_content:
+                seen_content.add(key)
                 final.append(line)
             if len(final) >= 25:
                 break
