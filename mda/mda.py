@@ -323,6 +323,68 @@ class MDA:
         "extended", "extend", "extends", "extending",
     })
 
+    # Root verb forms used *only* for event detection in learn().
+    # Kept separate from _VERB_STOPWORDS (which is a bootstrap filter)
+    # so the two concerns don't couple.  _detect_verb_root() maps any
+    # inflected surface form back to one of these roots.
+    _VERB_ROOTS: frozenset[str] = frozenset({
+        "build", "create", "develop", "found", "start", "launch",
+        "design", "write", "make", "call", "name", "show", "give",
+        "tell", "say", "work", "run", "use", "implement", "deploy",
+        "release", "fix", "update", "extend",
+    })
+
+    @staticmethod
+    def _detect_verb_root(token: str) -> str | None:
+        """Return the canonical root if *token* is a recognised verb form.
+
+        Steps:
+          1. Strip all non-alpha characters and lowercase.
+          2. Check for exact match in ``_VERB_ROOTS``.
+          3. Try common English inflection suffixes in priority order,
+             recovering the root with optional silent-e restoration.
+
+        Returns ``None`` when no root is found so the caller can skip
+        event recording cleanly.
+
+        Examples::
+
+            _detect_verb_root("building")  -> "build"
+            _detect_verb_root("creates")   -> "create"
+            _detect_verb_root("designed,") -> "design"
+            _detect_verb_root("the")       -> None
+        """
+        import re as _re
+        t = _re.sub(r"[^a-z]", "", token.lower())
+        if not t:
+            return None
+        if t in MDA._VERB_ROOTS:
+            return t
+        # Suffix table: (suffix_to_strip, optional_char_to_restore)
+        # Ordered from longest to shortest to avoid premature short matches.
+        _SUFFIXES = [
+            ("ying",  "y"),
+            ("ied",   "y"),
+            ("ies",   "y"),
+            ("ying",  ""),
+            ("ing",   ""),
+            ("tion",  ""),
+            ("ed",    ""),
+            ("ers",   ""),
+            ("er",    ""),
+            ("es",    ""),
+            ("s",     ""),
+        ]
+        for suffix, restore in _SUFFIXES:
+            if t.endswith(suffix) and len(t) - len(suffix) >= 3:
+                stem = t[: -len(suffix)]
+                if stem in MDA._VERB_ROOTS:
+                    return stem
+                # Silent-e restoration: "creat" -> "create"
+                if stem + "e" in MDA._VERB_ROOTS:
+                    return stem + "e"
+        return None
+
     def _find_entities_from_text(self, text: str) -> list:
         """Return entity list from text — handles punctuation, case, plural, bigram."""
         import re
@@ -542,29 +604,50 @@ class MDA:
         # Quality gates:
         #   1. _record_event must be True (False for source="load")
         #   2. At least 2 registry-recognized entities (not bootstrap nouns)
-        #   3. A verb token must be present in the text
+        #   3. A lemma-matched verb root must be present in the text
+        #   4. Agent and patient must each have use_count >= 2 AND
+        #      cosine(entity.v, input_vec) >= 0.25 AND not be a bootstrap
+        #      noun (use_count == 1 with no synapses)
         if _record_event and len(recognized_entities) >= 2:
             import time as _time
-            verb_word = next(
-                (tok for tok in en_text.lower().split()
-                 if tok in self._VERB_STOPWORDS),
-                None,
-            )
-            if verb_word:
-                frame = EventFrame(
-                    agent   = recognized_entities[0].v.copy(),
-                    verb    = normalize(self.encoder.encode(verb_word)),
-                    patient = recognized_entities[1].v.copy(),
-                    time    = time_encode(float(_time.time()),
-                                          step=self._turn_count),
-                )
-                parts = [recognized_entities[0].surface, verb_word,
-                         recognized_entities[1].surface]
-                self._event_store.append(
-                    (_time.time(), frame, " | ".join(parts))
-                )
-                if len(self._event_store) > 500:
-                    self._event_store = self._event_store[-500:]
+            from mda.core.bind import cosine as _cosine
+
+            # Find the first token whose lemma matches a known verb root.
+            verb_root: str | None = None
+            for _tok in en_text.split():
+                _root = self._detect_verb_root(_tok)
+                if _root is not None:
+                    verb_root = _root
+                    break
+
+            if verb_root is not None:
+                _agent   = recognized_entities[0]
+                _patient = recognized_entities[1]
+
+                def _is_valid_entity(ent) -> bool:
+                    # Reject bootstrap nouns: first-seen, no connections yet.
+                    if ent.use_count == 1 and len(ent.synapses) == 0:
+                        return False
+                    if ent.use_count < 2:
+                        return False
+                    if float(_cosine(ent.v, input_vec)) < 0.25:
+                        return False
+                    return True
+
+                if _is_valid_entity(_agent) and _is_valid_entity(_patient):
+                    frame = EventFrame(
+                        agent   = _agent.v.copy(),
+                        verb    = normalize(self.encoder.encode(verb_root)),
+                        patient = _patient.v.copy(),
+                        time    = time_encode(float(_time.time()),
+                                              step=self._turn_count),
+                    )
+                    parts = [_agent.surface, verb_root, _patient.surface]
+                    self._event_store.append(
+                        (_time.time(), frame, " | ".join(parts))
+                    )
+                    if len(self._event_store) > 500:
+                        self._event_store = self._event_store[-500:]
 
         # Only add to conversation memory for interactive learning; bulk
         # loading (source="load") must not pollute the memory summary.
@@ -593,16 +676,30 @@ class MDA:
             # Scan the entire fact store with a relaxed threshold so that
             # semantically adjacent facts (different vocabulary, same topic)
             # are still surfaced.
+            #
+            # Guard: skip facts that contain "MDA" (self-referential system
+            # docs) unless the query itself mentions "mda" — prevents system
+            # documentation from leaking into unrelated queries.
+            _mda_query = "mda" in query.lower()
             scored: list[tuple[float, str]] = []
             seen_f: set[str] = set()
             for entity in self.registry.all():
                 for score, fact in self.broca._score_facts(entity, query_vec, top_k=5):
-                    if score >= 0.10 and fact not in seen_f:
-                        scored.append((score, fact))
-                        seen_f.add(fact)
+                    if score < 0.10 or fact in seen_f:
+                        continue
+                    if not _mda_query and "MDA" in fact:
+                        continue
+                    scored.append((score, fact))
+                    seen_f.add(fact)
             scored.sort(key=lambda x: -x[0])
             broad = "\n".join(f"[MEMORY] {f}" for _, f in scored[:5])
-            return broad[:3000] if broad else ""
+            if not broad:
+                return ""
+            if len(broad) <= 3000:
+                return broad
+            truncated = broad[:3000]
+            last_nl = truncated.rfind("\n")
+            return truncated[:last_nl] if last_nl > 0 else truncated
 
         origin_sim = float(cosine(origin[0].v, query_vec))
         origin_vec = normalize(origin[0].dominant_sense(query_vec))
@@ -679,7 +776,11 @@ class MDA:
                 break
 
         result = "\n".join(final)
-        return result[:3000] if len(result) > 3000 else result
+        if len(result) <= 3000:
+            return result
+        truncated = result[:3000]
+        last_nl = truncated.rfind("\n")
+        return truncated[:last_nl] if last_nl > 0 else truncated
 
     def stats(self) -> str:
         lines = [f"Entity count: {self.registry.count()}", self.registry.summary()]
