@@ -251,7 +251,8 @@ class TestSwitchModel:
         engine = MDAEngine()
         engine.mda.teach("Foo", ["Foo is here."])
         old_mda = engine.mda
-        with patch.object(engine, "save", return_value={}):
+        with patch.object(engine, "save", return_value={}), \
+             patch.object(engine, "_auto_load", return_value=None):
             engine.switch_model("another:7b")
         assert engine.mda is not old_mda
         assert engine.mda.registry.count() == 0

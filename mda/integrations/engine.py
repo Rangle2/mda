@@ -62,6 +62,10 @@ class MDAEngine:
         self._last_en_response: str = ""
         self._last_context:   str = ""
         self._loader = None
+        # Entity IDs seeded exclusively from .memory/*.md auto-load.
+        # These use a higher fact-confidence gate (0.55) in _build_context so
+        # background docs don't crowd out interactively learned knowledge.
+        self._background_entity_ids: set[str] = set()
 
         if knowledge_path:
             self.mda.load(knowledge_path, streaming=True, max_entities=max_entities)
@@ -193,6 +197,11 @@ class MDAEngine:
 
     def learn(self, text: str) -> None:
         self.mda.learn(text)
+        # Promote any entity touched by interactive learning out of background.
+        # Once a user/agent explicitly teaches something, it should surface at
+        # normal threshold even if it was previously seen in a .memory/*.md file.
+        for entity in self.mda._find_entities_from_text(text):
+            self._background_entity_ids.discard(entity.id)
 
     def teach(self, surface: str, facts: list[str],
               category: str = "custom") -> None:
@@ -285,6 +294,8 @@ class MDAEngine:
             self.mda.learn(en_para, source="load")
             entities = self.mda._find_entities_from_text(en_para)
             for entity in entities:
+                # Mark as background: only show in context when strongly relevant.
+                self._background_entity_ids.add(entity.id)
                 if entity.surface[0].isupper():
                     self.mda.broca.store_facts(entity.id, [en_para], positions=[idx])
             count += 1
@@ -354,11 +365,15 @@ class MDAEngine:
             # weak origin   (sim→0.0) → threshold→0.10 → broad context
             inhibition_threshold = max(0.10, min(0.35, 0.10 + origin_sim * 0.25))
 
+            _origin_bg = origin[0].id in self._background_entity_ids
             for score, fact in self.mda.broca._score_facts(origin[0], query_vec, top_k=3):
                 if score < 0.2 or self._is_junk(fact):
                     continue
                 conf = self.mda.broca._entity_confidence(origin[0], score, chain_depth=0)
-                if conf < 0.20:
+                # Background entities (from .memory/*.md) need a stronger signal
+                # to surface — prevents system docs from polluting every query.
+                min_conf = 0.55 if _origin_bg else 0.20
+                if conf < min_conf:
                     continue
                 tag = "MEMORY" if conf >= 0.35 else "WEAK"
                 lines.append(f"[{tag}:{conf}] {fact}")
@@ -390,11 +405,13 @@ class MDAEngine:
                 # High score → 2 facts, barely above threshold → 1 fact
                 top_k = 2 if best_score > inhibition_threshold * 1.5 else 1
 
+                _node_bg  = entity.id in self._background_entity_ids
+                _min_conf = 0.55 if _node_bg else 0.20
                 for score, fact in self.mda.broca._score_facts(entity, query_vec, top_k=top_k):
                     if score < 0.2 or self._is_junk(fact):
                         continue
                     conf = self.mda.broca._entity_confidence(entity, score, chain_depth=node.depth)
-                    if conf < 0.20:
+                    if conf < _min_conf:
                         continue
                     tag  = "MEMORY" if conf >= 0.35 else "WEAK"
                     line = f"[{tag}:{conf}] {fact}"
